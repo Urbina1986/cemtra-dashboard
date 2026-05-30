@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -263,7 +264,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
       <div class="kpi-card purple">
         <div class="kpi-label">Pacientes Únicos</div>
         <div class="kpi-value" id="kpi-pacientes">—</div>
-        <div class="kpi-sub">por RUT</div>
+        <div class="kpi-sub">por ID de paciente</div>
       </div>
     </div>
 
@@ -325,7 +326,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 <footer>Dashboard CEMTRA · Datos en tiempo real desde Google Sheets</footer>
 
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQiW6plc_ObIL6DWlUhU_R7Fl6EHSFZjcgHocncme8qhW-SIAcPULYL11LLsdLNmw/pub?output=csv';
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqIOie36k0AHq_UoXOv_rjSv9qTvzGUtvIS9dQAM3O1Nxcg8x7W8q3dYJUcy3ntrbV1iaV5-UyT9mN/pub?output=csv&t=' + Date.now();
 
 let rawData = [];
 let charts  = {};
@@ -405,10 +406,20 @@ const fmtN = n => new Intl.NumberFormat('es-CL').format(n);
 
 function parseFecha(str) {
   if (!str) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return new Date(str.slice(0,10));
-  if (/^\d{2}\/\d{2}\/\d{4}/.test(str)) {
+  // ISO: 2026-05-29 o 2026-05-29 00:00:00 → hora local (evita bug UTC)
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    const p = str.slice(0,10).split('-');
+    return new Date(+p[0], +p[1]-1, +p[2]);
+  }
+  // DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
     const [d,mo,y] = str.split('/'); return new Date(+y, +mo-1, +d);
   }
+  // D-M-YYYY o similares con guión
+  if (/^\d{1,2}-\d{1,2}-\d{4}/.test(str)) {
+    const [d,mo,y] = str.split('-'); return new Date(+y, +mo-1, +d);
+  }
+  // Serial Excel
   const n = parseInt(str);
   if (!isNaN(n) && n > 40000) return new Date((n-25569)*86400*1000);
   return null;
@@ -683,7 +694,7 @@ function render() {
   // KPIs
   const total      = data.length;
   const produccion = data.reduce((s,r)=>s+parseTotal(r['TOTAL']),0);
-  const pacientes  = new Set(data.map(r=>r['RUT'])).size;
+  const pacientes  = new Set(data.map(r=>r['PACIENTE_ID']).filter(v=>v&&v!=='')).size;
   document.getElementById('kpi-total').textContent      = fmtN(total);
   document.getElementById('kpi-produccion').textContent = fmt(produccion);
   document.getElementById('kpi-ticket').textContent     = fmt(total?produccion/total:0);
