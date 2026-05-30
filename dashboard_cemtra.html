@@ -419,9 +419,12 @@ function parseFecha(str) {
   if (/^\d{1,2}-\d{1,2}-\d{4}/.test(str)) {
     const [d,mo,y] = str.split('-'); return new Date(+y, +mo-1, +d);
   }
-  // Serial Excel
+  // Serial Excel → convertir a fecha local (evitar desfase UTC)
   const n = parseInt(str);
-  if (!isNaN(n) && n > 40000) return new Date((n-25569)*86400*1000);
+  if (!isNaN(n) && n > 40000) {
+    const d = new Date((n-25569)*86400*1000);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
   return null;
 }
 
