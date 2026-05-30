@@ -160,6 +160,19 @@ header p  { font-size: 0.82rem; opacity: 0.8; margin-top: 3px; }
 .tbl-top td { padding: 8px 13px; border-bottom: 1px solid #f0f4f8; }
 .tbl-top tr:hover td { background: #f7fafc; }
 
+/* Tabla derivadores */
+.tbl-deriv { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.tbl-deriv th {
+  background: #f0fff4; color: #276749; font-weight: 700;
+  padding: 10px 13px; text-align: left; white-space: nowrap;
+}
+.tbl-deriv td { padding: 8px 13px; border-bottom: 1px solid #f0f4f8; }
+.tbl-deriv tr:hover td { background: #f7fafc; }
+.badge-deriv {
+  display: inline-block; background: #c6f6d5; color: #276749;
+  border-radius: 12px; padding: 1px 9px; font-size: 0.78rem; font-weight: 700;
+}
+
 footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; }
 </style>
 </head>
@@ -320,6 +333,25 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
       </table>
     </div>
 
+    <!-- Top 10 Derivadores -->
+    <div class="card" id="card-derivadores" style="overflow-x:auto;display:none">
+      <div class="card-title" id="title-derivadores">🔀 Top 10 Derivadores</div>
+      <p style="font-size:0.78rem;color:#718096;margin-bottom:12px" id="desc-derivadores">
+        Especialistas cuyo paciente tuvo una atención previa en CEMTRA antes de llegar a esta sala.
+      </p>
+      <table class="tbl-deriv">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Especialista Derivador</th>
+            <th>Sala / Especialidad</th>
+            <th>Pacientes Derivados</th>
+          </tr>
+        </thead>
+        <tbody id="deriv-body"></tbody>
+      </table>
+    </div>
+
   </div>
 </div>
 
@@ -335,6 +367,14 @@ let activeMedicoSala = null;
 let activeKineSala   = null;
 let MEDICOS_LIST = [];
 let KINE_LIST    = [];
+let patientHistory = {}; // PACIENTE_ID → [{fechaMs, sala, especialista}] ordenado por fecha
+
+// Tabs donde mostrar derivadores (excluye Todos y Médicos porque no tiene sentido)
+const TABS_CON_DERIVADORES = new Set([
+  'kine','kine_todos','kine_kine','kine_ondas','kine_footscan','kine_reintegro',
+  'ortesis','procedimientos','imagenologia','yeso','eco','to','nutricionistas',
+  'rayos','nutriologa','bariatrica'
+]);
 
 const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                        'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -458,6 +498,44 @@ function sumBy(data, key) {
 }
 
 // ─── Carga CSV ───────────────────────────────────────────────────────────────
+function buildPatientHistory() {
+  // Construir mapa PACIENTE_ID → array de visitas ordenadas por fecha
+  const tmp = {};
+  rawData.forEach(r => {
+    const pid = r['PACIENTE_ID'];
+    const f   = parseFecha(r['FECHA']);
+    if (!pid || !f) return;
+    if (!tmp[pid]) tmp[pid] = [];
+    tmp[pid].push({ fechaMs: f.getTime(), sala: (r['SALA']||'').trim(), especialista: (r['ESPECIALISTA']||'').trim() });
+  });
+  // Ordenar cada paciente por fecha
+  Object.keys(tmp).forEach(pid => {
+    tmp[pid].sort((a,b) => a.fechaMs - b.fechaMs);
+  });
+  patientHistory = tmp;
+}
+
+function getTopDerivadores(data, n=10) {
+  // Para cada registro en data, buscar la visita inmediatamente anterior del mismo paciente
+  const conteo = {}; // "especialista|||sala" → { count, sala, especialista }
+  data.forEach(r => {
+    const pid    = r['PACIENTE_ID'];
+    const fechaMs = (parseFecha(r['FECHA'])||new Date(0)).getTime();
+    const hist   = patientHistory[pid];
+    if (!hist) return;
+    // Buscar la visita más reciente ANTES de esta (mismo paciente, fecha anterior)
+    let anterior = null;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      if (hist[i].fechaMs < fechaMs) { anterior = hist[i]; break; }
+    }
+    if (!anterior || !anterior.especialista || anterior.especialista === '-') return;
+    const key = anterior.especialista + '|||' + anterior.sala;
+    if (!conteo[key]) conteo[key] = { count: 0, especialista: anterior.especialista, sala: anterior.sala };
+    conteo[key].count++;
+  });
+  return Object.values(conteo).sort((a,b) => b.count - a.count).slice(0, n);
+}
+
 Papa.parse(CSV_URL, {
   download:true, header:false, skipEmptyLines:true,
   beforeFirstChunk: chunk => chunk.slice(chunk.indexOf('\n')+1),
@@ -467,6 +545,7 @@ Papa.parse(CSV_URL, {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
     }).filter(r => r['#'] && r['#']!=='#');
 
+    buildPatientHistory();
     populateFilters();
     buildMedicosSubtabs();
     buildKineSubtabs();
@@ -841,6 +920,40 @@ function render() {
           <td>${fmt(a?p/a:0)}</td>
         </tr>`;
       }).join('');
+
+  // ── Top 10 Derivadores ─────────────────────────────────────────────────────
+  const cardDeriv = document.getElementById('card-derivadores');
+  if (TABS_CON_DERIVADORES.has(activeTab)) {
+    cardDeriv.style.display = '';
+    const derivadores = getTopDerivadores(data);
+    const maxCount = derivadores.length > 0 ? derivadores[0].count : 1;
+    // Nombre legible de la pestaña actual para el título
+    const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
+    document.getElementById('title-derivadores').textContent = `🔀 Top 10 Derivadores → ${tabLabel}`;
+    document.getElementById('desc-derivadores').textContent =
+      `Especialistas que atendieron al mismo paciente en CEMTRA antes de llegar a ${tabLabel} (según historial de ID de paciente).`;
+    document.getElementById('deriv-body').innerHTML = derivadores.length === 0
+      ? '<tr><td colspan="4" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación</td></tr>'
+      : derivadores.map((d, i) => {
+          const pct = Math.round((d.count / maxCount) * 100);
+          // Nombre limpio: quitar especialidad del nombre del especialista si está duplicada
+          const espec = d.especialista.replace(/^(DR\.|DRA\.|KLGO\.|KLGA\.)\s*/i, m => m.charAt(0).toUpperCase()+m.slice(1).toLowerCase());
+          const sala  = d.sala.replace(/^(KLGO\.|KLGA\.|DR\.|DRA\.)\s*[^-]+ - /i,'').trim();
+          return `<tr>
+            <td><strong>${i+1}</strong></td>
+            <td>${espec}</td>
+            <td style="color:#718096;font-size:0.8rem">${sala}</td>
+            <td>
+              <span class="badge-deriv">${fmtN(d.count)}</span>
+              <div class="mini-bar-bg" style="margin-top:4px;max-width:120px">
+                <div class="mini-bar" style="width:${pct}%;background:#38a169"></div>
+              </div>
+            </td>
+          </tr>`;
+        }).join('');
+  } else {
+    cardDeriv.style.display = 'none';
+  }
 }
 </script>
 </body>
