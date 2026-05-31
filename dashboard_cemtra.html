@@ -529,6 +529,11 @@ function getTopDerivadores(data, n=10) {
       if (hist[i].fechaMs < fechaMs) { anterior = hist[i]; break; }
     }
     if (!anterior || !anterior.especialista || anterior.especialista === '-') return;
+    // Solo contar si la sala anterior es de un médico (DR./DRA.), excluyendo Eco, Nutrióloga y Bariátrica
+    const salaAnterior = (anterior.sala || '').toUpperCase();
+    const esMedico = (salaAnterior.startsWith('DR.') || salaAnterior.startsWith('DRA.')) &&
+                     !salaAnterior.includes('NUTRIOL') && !salaAnterior.includes('BARIATRICA');
+    if (!esMedico) return;
     const key = anterior.especialista + '|||' + anterior.sala;
     if (!conteo[key]) conteo[key] = { count: 0, especialista: anterior.especialista, sala: anterior.sala };
     conteo[key].count++;
@@ -931,7 +936,7 @@ function render() {
     const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
     document.getElementById('title-derivadores').textContent = `🔀 Top 10 Derivadores → ${tabLabel}`;
     document.getElementById('desc-derivadores').textContent =
-      `Especialistas que atendieron al mismo paciente en CEMTRA antes de llegar a ${tabLabel} (según historial de ID de paciente).`;
+      `Médicos (DR./DRA.) que atendieron al mismo paciente en CEMTRA antes de llegar a ${tabLabel}.`;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
       ? '<tr><td colspan="4" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación</td></tr>'
       : derivadores.map((d, i) => {
