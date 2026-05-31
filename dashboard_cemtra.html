@@ -521,24 +521,37 @@ function getTopDerivadores(data, n=10) {
     let derivador = '';
     let fuente    = '';
 
-    // 1. DERIVADOR directo desde Mediweb (columna nueva del Google Sheet)
+    // Helper: determina si una sala es de médico (DR./DRA., excl. Eco/Nutrióloga/Bariátrica)
+    const esSalaMedico = s => {
+      const u = (s||'').toUpperCase();
+      return (u.startsWith('DR.') || u.startsWith('DRA.')) &&
+             !u.includes('NUTRIOL') && !u.includes('BARIATRICA');
+    };
+
+    // 1. DERIVADOR directo desde Mediweb — solo si no es kinesiólogo ni técnico
     const derivMediweb = (r['DERIVADOR'] || '').trim();
     if (derivMediweb && derivMediweb !== '-') {
-      derivador = derivMediweb;
-      fuente    = 'Mediweb';
-    } else {
-      // 2. Inferir desde historial: última visita médica anterior del mismo paciente
+      // Verificar que la sala actual del derivador sea médico buscando en rawData
+      // Como solo tenemos el nombre, confiamos en Mediweb pero excluimos KLGO/KLGA
+      const esKine = /^(KLGO|KLGA)\./i.test(derivMediweb);
+      if (!esKine) { derivador = derivMediweb; fuente = 'Mediweb'; }
+    }
+
+    // 2. Inferir desde historial si no hay derivador Mediweb
+    if (!derivador) {
       const pid     = r['PACIENTE_ID'];
       const fechaMs = (parseFecha(r['FECHA']) || new Date(0)).getTime();
       const hist    = patientHistory[pid];
       if (hist) {
+        // Buscar hacia atrás hasta encontrar una visita de médico (no solo la primera)
         for (let i = hist.length - 1; i >= 0; i--) {
           if (hist[i].fechaMs < fechaMs) {
-            const salaAnt = (hist[i].sala || '').toUpperCase();
-            const esMedico = (salaAnt.startsWith('DR.') || salaAnt.startsWith('DRA.')) &&
-                             !salaAnt.includes('NUTRIOL') && !salaAnt.includes('BARIATRICA');
-            if (esMedico) { derivador = hist[i].especialista; fuente = 'Inferido'; }
-            break;
+            if (esSalaMedico(hist[i].sala)) {
+              derivador = hist[i].especialista;
+              fuente    = 'Inferido';
+              break;
+            }
+            // Si no es médico, sigue buscando hacia atrás
           }
         }
       }
