@@ -439,8 +439,7 @@ function isReintegro(r) {
 }
 function isEco(r) {
   const s = (r['SALA']||'').toUpperCase();
-  const e = (r['ESPECIALISTA']||'').toUpperCase();
-  return s.startsWith('ECO') || e.includes('PIZARRO') || e.includes('SERGIO MUÑOZ') || e.includes('RODRIGO VEGA');
+  return s.startsWith('ECO');
 }
 function isTO(r) {
   return (r['SALA']||'').toUpperCase().includes('TERAPIA OCUPACIONAL') ||
