@@ -349,7 +349,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 
     <!-- Top 10 Derivadores -->
     <div class="card" id="card-derivadores" style="overflow-x:auto;display:none">
-      <div class="card-title" id="title-derivadores">🔀 Derivadores a Kine</div>
+      <div class="card-title" id="title-derivadores">🔀 Derivadores → Servicios CEMTRA</div>
       <p style="font-size:0.78rem;color:#718096;margin-bottom:12px" id="desc-derivadores">
         De los pacientes que cada médico atendió en el período, cuántos llegaron a kine en los 90 días siguientes.
       </p>
@@ -467,6 +467,12 @@ function isEco(r) {
 function isTO(r) {
   return (r['SALA']||'').toUpperCase().includes('TERAPIA OCUPACIONAL') ||
          (r['ESPECIALISTA']||'').toUpperCase().includes('JACQUELINE SALAS');
+}
+function isDestinoCEMTRA(r) {
+  return isSalaKine(r) || sala(r,'ORTESIS') ||
+         (r['SALA']||'').toUpperCase() === 'SALA DE PROCEDIMIENTOS' ||
+         sala(r,'IMAGENOLOGIA') || sala(r,'YESO') || isEco(r) ||
+         isTO(r) || sala(r,'NUTRICIONISTA') || sala(r,'RAYOS') || sala(r,'NUTRIOL');
 }
 function isMedico(r) {
   const s = (r['SALA']||'').toUpperCase();
@@ -1001,12 +1007,11 @@ function render() {
   const cardDeriv = document.getElementById('card-derivadores');
   if (TABS_CON_DERIVADORES.has(activeTab)) {
     cardDeriv.style.display = '';
-    const derivadores = getDerivacionesReales(DERIV_DESTINO[activeTab]);
+    const derivadores = getDerivacionesReales(isDestinoCEMTRA);
     const maxKine = derivadores.length > 0 ? derivadores[0].aKine : 1;
-    const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
-    document.getElementById('title-derivadores').textContent = `🔀 Derivadores → ${tabLabel}`;
+    document.getElementById('title-derivadores').textContent = `🔀 Derivadores → Servicios CEMTRA`;
     document.getElementById('desc-derivadores').textContent =
-      `De los pacientes atendidos por cada médico en el período, cuántos llegaron a ${tabLabel} en los 90 días siguientes.`;
+      `De los pacientes atendidos por cada médico en el período, cuántos llegaron a cualquier servicio de CEMTRA (Kine, Ortesis, Procedimientos, Imagenología, Yeso, Eco, TO, Nutricionistas, Rayos X, Nutrióloga) en los 90 días siguientes.`;
     document.getElementById('deriv-col-destino').textContent = `→ ${tabLabel}`;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
       ? '<tr><td colspan="5" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación para el período seleccionado</td></tr>'
