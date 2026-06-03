@@ -373,7 +373,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 <footer>Dashboard CEMTRA · Datos en tiempo real desde Google Sheets</footer>
 
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTFl-KydR95XEoEc3sSPLh9N9Jnz1SMMp43n75ad0lvQvixYX6zDNHeDEsm5ePHlH_lVYos2x20Byvr/pub?output=csv&t=' + Date.now();
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU63c1-QwLVbDscd1EjrhZadJ2-ZWt56oUwaO_DHTWn_1Vw7FPKgQ3e0CNOXMv1Q/pub?output=csv&t=' + Date.now();
 
 let rawData = [];
 let charts  = {};
@@ -608,9 +608,10 @@ Papa.parse(CSV_URL, {
     const esTitulo = primeraFila.length === 1 || (primeraFila[0] || '').toString().toUpperCase().includes('REPORTE');
     const headers = esTitulo ? results.data[1] : results.data[0];
     const dataStart = esTitulo ? 2 : 1;
+    const ESTADOS_VALIDOS = new Set(['atención','espera','finalizado','observado']);
     rawData = results.data.slice(dataStart).map(row => {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
-    }).filter(r => r['#'] && r['#']!=='#');
+    }).filter(r => r['#'] && r['#']!=='#' && ESTADOS_VALIDOS.has((r['ESTADO']||'').toLowerCase().trim()));
 
     buildPatientHistory();
     populateFilters();
