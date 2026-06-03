@@ -1012,7 +1012,7 @@ function render() {
     document.getElementById('title-derivadores').textContent = `🔀 Derivadores → Servicios CEMTRA`;
     document.getElementById('desc-derivadores').textContent =
       `De los pacientes atendidos por cada médico en el período, cuántos llegaron a cualquier servicio de CEMTRA (Kine, Ortesis, Procedimientos, Imagenología, Yeso, Eco, TO, Nutricionistas, Rayos X, Nutrióloga) en los 90 días siguientes.`;
-    document.getElementById('deriv-col-destino').textContent = `→ ${tabLabel}`;
+    document.getElementById('deriv-col-destino').textContent = `→ Destino`;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
       ? '<tr><td colspan="5" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación para el período seleccionado</td></tr>'
       : derivadores.map((d, i) => {
