@@ -308,7 +308,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
     </div>
 
     <!-- Dos columnas: tabla especialidad + patrón horario -->
-    <div class="grid-2col" style="margin-top:20px">
+    <div id="grid-esp-horario" class="grid-2col" style="margin-top:20px">
       <div class="card" style="overflow-x:auto">
         <div class="card-title" id="title-esp">🏥 Atenciones por Especialidad</div>
         <table class="tbl-esp" id="tabla-especialidad">
@@ -328,6 +328,12 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
         <div class="card-title">🕐 Patrón de Demanda Horaria</div>
         <div class="chart-wrap"><canvas id="chart-horario"></canvas></div>
       </div>
+    </div>
+
+    <!-- Gráfico días de atención -->
+    <div class="card grid-full" style="margin-top:20px">
+      <div class="card-title">📅 Atenciones por Día de la Semana</div>
+      <div class="chart-wrap"><canvas id="chart-dias"></canvas></div>
     </div>
 
     <!-- Tabla Top 10 -->
@@ -561,12 +567,15 @@ function getDerivacionesReales(destFilter, n = Infinity) {
   const pago = document.getElementById('f-pago').value;
 
   // Paso 1: consultas médicas en el período — Map<doctor, Map<patientId, fechaMs>>
-  // Excluye Examen y Administrativo tanto por ESPECIALIDAD como por SALA
+  // Excluye consultas de examen/administrativo por ESPECIALIDAD (para todos los médicos)
+  // Para Apablaza: solo cuenta atenciones de traumatología
   const EXCLUIR = ['examen', 'administrativo', 'administración', 'administracion'];
   const esConsulta = r => {
     const esp  = (r['ESPECIALIDAD'] || '').toLowerCase().trim();
     const sala = (r['SALA'] || '').toLowerCase().trim();
-    return !EXCLUIR.some(ex => esp.includes(ex) || sala.includes(ex));
+    if (EXCLUIR.some(ex => esp.includes(ex))) return false;
+    if (sala.includes('apablaza') && !sala.includes('traumatol')) return false;
+    return true;
   };
 
   const consultas = {};
@@ -827,6 +836,7 @@ function getFiltered() {
     if (mesV!=='' && getMesNum(r['FECHA'])!==parseInt(mesV)) return false;
     if (diaV!=='' && getDia(r['FECHA'])!==parseInt(diaV)) return false;
     if (pago && r['TIPO PAGO']!==pago) return false;
+    if (parseTotal(r['TOTAL']) === 0) return false;
     return true;
   });
 }
@@ -922,6 +932,13 @@ function render() {
                    : tab.espTitle;
   const espKey     = (activeMedicoSala || activeKineSala) ? 'EXAMEN' : tab.espKey;
   const espNombre  = (activeMedicoSala || activeKineSala) ? 'Examen / Prestación' : (tab.tablaNombre || 'Categoría');
+  // Ancho completo cuando se ve un médico o kinesiólogo específico
+  const gridEspHorario = document.getElementById('grid-esp-horario');
+  if (activeMedicoSala || activeKineSala) {
+    gridEspHorario.style.gridTemplateColumns = '1fr';
+  } else {
+    gridEspHorario.style.gridTemplateColumns = '';
+  }
   document.getElementById('title-esp').textContent    = espTitle;
   document.getElementById('th-esp-nombre').textContent= espNombre;
   // sobreescribir temporalmente para usar en el bloque
@@ -933,7 +950,7 @@ function render() {
   document.getElementById('esp-body').innerHTML = espSorted.map(([nombre, aten])=>{
     const prod = espProd[nombre]||0;
     const pct  = Math.round(aten/maxAten*100);
-    const label= nombre.length>32 ? nombre.slice(0,30)+'…' : nombre;
+    const label= (activeMedicoSala || activeKineSala) ? nombre : (nombre.length>32 ? nombre.slice(0,30)+'…' : nombre);
     return `<tr>
       <td>${label}</td>
       <td style="text-align:right">${fmtN(aten)}</td>
@@ -950,7 +967,7 @@ function render() {
     const h=getHora(r['HORA']); if(h===null) return;
     horaCount[h]=(horaCount[h]||0)+1;
   });
-  const horasOrden = Array.from({length:24},(_,i)=>i);
+  const horasOrden = Array.from({length:14},(_,i)=>i+8); // 08:00 a 21:00
   const horaLabels = horasOrden.map(h=>`${String(h).padStart(2,'0')}:00`);
   const horaVals   = horasOrden.map(h=>horaCount[h]||0);
   const maxHora    = Math.max(...horaVals);
@@ -980,6 +997,43 @@ function render() {
       scales:{
         x:{ticks:{font:{size:9}, maxRotation:45}},
         y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}}
+      }
+    }
+  });
+
+  // ── Gráfico Días de la Semana ──────────────────────────────────────────────
+  const DIAS_NOMBRES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const DIAS_ORDER   = [1,2,3,4,5,6,0]; // lunes=1 ... domingo=0
+  const diaCount = {};
+  data.forEach(r=>{
+    const f=parseFecha(r['FECHA']); if(!f) return;
+    const d=f.getDay(); diaCount[d]=(diaCount[d]||0)+1;
+  });
+  const diaVals   = DIAS_ORDER.map(d=>diaCount[d]||0);
+  const maxDia    = Math.max(...diaVals,1);
+  const DIAS_COLORS = ['#3182ce','#3182ce','#3182ce','#3182ce','#3182ce','#805ad5','#e53e3e'];
+
+  destroyChart('chart-dias');
+  const ctxD = document.getElementById('chart-dias').getContext('2d');
+  charts['chart-dias'] = new Chart(ctxD, {
+    type:'bar',
+    data:{
+      labels: DIAS_NOMBRES,
+      datasets:[{
+        data: diaVals,
+        backgroundColor: DIAS_COLORS,
+        borderRadius:4, borderWidth:0
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:c=>' '+fmtN(c.parsed.y)+' atenciones'}}
+      },
+      scales:{
+        x:{ticks:{font:{size:11}}},
+        y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}, beginAtZero:true}
       }
     }
   });
@@ -1022,12 +1076,7 @@ function render() {
             <td><strong>${i+1}</strong></td>
             <td>${d.nombre}</td>
             <td style="text-align:center">${fmtN(d.consultas)}</td>
-            <td>
-              <span class="badge-deriv">${fmtN(d.aKine)}</span>
-              <div class="mini-bar-bg" style="margin-top:4px;max-width:100px">
-                <div class="mini-bar" style="width:${barPct}%;background:#38a169"></div>
-              </div>
-            </td>
+            <td><span class="badge-deriv">${fmtN(d.aKine)}</span></td>
             <td style="text-align:center;font-weight:600;color:${pctColor}">${d.pct}%</td>
           </tr>`;
         }).join('');
