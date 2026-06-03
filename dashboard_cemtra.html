@@ -349,16 +349,18 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 
     <!-- Top 10 Derivadores -->
     <div class="card" id="card-derivadores" style="overflow-x:auto;display:none">
-      <div class="card-title" id="title-derivadores">🔀 Top 10 Derivadores</div>
+      <div class="card-title" id="title-derivadores">🔀 Top 10 Derivadores a Kine</div>
       <p style="font-size:0.78rem;color:#718096;margin-bottom:12px" id="desc-derivadores">
-        Especialistas cuyo paciente tuvo una atención previa en CEMTRA antes de llegar a esta sala.
+        De los pacientes que cada médico atendió en el período, cuántos llegaron a kine en los 90 días siguientes.
       </p>
       <table class="tbl-deriv">
         <thead>
           <tr>
             <th>#</th>
-            <th>Médico Derivador</th>
-            <th>Derivaciones</th>
+            <th>Médico</th>
+            <th>Consultas</th>
+            <th>→ Kine</th>
+            <th>%</th>
           </tr>
         </thead>
         <tbody id="deriv-body"></tbody>
@@ -382,11 +384,11 @@ let MEDICOS_LIST = [];
 let KINE_LIST    = [];
 let patientHistory = {}; // PACIENTE_ID → [{fechaMs, sala, especialista}] ordenado por fecha
 
-// Tabs donde mostrar derivadores (excluye Todos y Médicos porque no tiene sentido)
+// Derivadores: visible en todas las pestañas
 const TABS_CON_DERIVADORES = new Set([
-  'kine','kine_todos','kine_kine','kine_ondas','kine_footscan','kine_reintegro',
+  'todos','kine','kine_todos','kine_kine','kine_ondas','kine_footscan','kine_reintegro',
   'ortesis','procedimientos','imagenologia','yeso','eco','to','nutricionistas',
-  'rayos','nutriologa','bariatrica'
+  'medicos','rayos','nutriologa','bariatrica'
 ]);
 
 const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -527,62 +529,56 @@ function buildPatientHistory() {
   patientHistory = tmp;
 }
 
-function getTopDerivadores(data, n=10) {
-  const conteo = {};
+function getDerivacionesReales(n = 10) {
+  const anio = document.getElementById('f-anio').value;
+  const mesV = document.getElementById('f-mes').value;
+  const pago = document.getElementById('f-pago').value;
 
-  data.forEach(r => {
-    let derivador = '';
-    let fuente    = '';
-
-    // Helper: determina si una sala es de médico (DR./DRA., excl. Eco/Nutrióloga/Bariátrica)
-    const esSalaMedico = s => {
-      const u = (s||'').toUpperCase();
-      return (u.startsWith('DR.') || u.startsWith('DRA.')) &&
-             !u.includes('NUTRIOL') && !u.includes('BARIATRICA');
-    };
-
-    // 1. DERIVADOR directo desde Mediweb — solo si no es kinesiólogo ni técnico
-    const derivMediweb = (r['DERIVADOR'] || '').trim();
-    const DERIVADOR_INVALIDO = ['-', 'DESCONOCIDA REFERENCIA', 'ILEGIBLE REFERENCIA'];
-    if (derivMediweb && !DERIVADOR_INVALIDO.includes(derivMediweb.toUpperCase())) {
-      // Verificar que la sala actual del derivador sea médico buscando en rawData
-      // Como solo tenemos el nombre, confiamos en Mediweb pero excluimos KLGO/KLGA
-      const esKine = /^(KLGO|KLGA)\./i.test(derivMediweb);
-      if (!esKine) { derivador = derivMediweb; fuente = 'Mediweb'; }
-    }
-
-    // 2. Inferir desde historial si no hay derivador Mediweb
-    if (!derivador) {
-      const pid     = r['RUT']||r['PACIENTE_ID'];
-      const fechaMs = (parseFecha(r['FECHA']) || new Date(0)).getTime();
-      const hist    = patientHistory[pid];
-      if (hist) {
-        // Buscar hacia atrás hasta encontrar una visita de médico (no solo la primera)
-        for (let i = hist.length - 1; i >= 0; i--) {
-          if (hist[i].fechaMs < fechaMs) {
-            if (esSalaMedico(hist[i].sala)) {
-              derivador = hist[i].especialista;
-              fuente    = 'Inferido';
-              break;
-            }
-            // Si no es médico, sigue buscando hacia atrás
-          }
-        }
-      }
-    }
-
-    if (!derivador || derivador === '-') return;
-
-    // Normalizar nombre: capitalizar primera letra de cada palabra
-    const nombre = derivador.split(' ')
+  // Paso 1: consultas médicas en el período seleccionado
+  // Por cada médico: Map<patientId, fechaMs más temprana de consulta>
+  const consultas = {};
+  rawData.forEach(r => {
+    if (!isMedico(r)) return;
+    if (anio && getAnio(r['FECHA']) !== anio) return;
+    if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
+    if (pago && r['TIPO PAGO'] !== pago) return;
+    const fecha = parseFecha(r['FECHA']);
+    if (!fecha) return;
+    const pid = r['RUT'] || r['PACIENTE_ID'];
+    if (!pid) return;
+    const nombre = (r['SALA'] || '').trim().split(' ')
       .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
-    if (!conteo[nombre]) conteo[nombre] = { nombre, count: 0, mediweb: 0, inferido: 0 };
-    conteo[nombre].count++;
-    if (fuente === 'Mediweb') conteo[nombre].mediweb++;
-    else                      conteo[nombre].inferido++;
+    if (!consultas[nombre]) consultas[nombre] = new Map();
+    const prev = consultas[nombre].get(pid);
+    if (!prev || fecha.getTime() < prev) consultas[nombre].set(pid, fecha.getTime());
   });
 
-  return Object.values(conteo).sort((a,b) => b.count - a.count).slice(0, n);
+  // Paso 2: índice de visitas a kine por paciente (todas las fechas, sin filtro de período)
+  const kineVisitas = {};
+  rawData.forEach(r => {
+    if (!isSalaKine(r)) return;
+    const pid = r['RUT'] || r['PACIENTE_ID'];
+    if (!pid) return;
+    const fecha = parseFecha(r['FECHA']);
+    if (!fecha) return;
+    if (!kineVisitas[pid]) kineVisitas[pid] = [];
+    kineVisitas[pid].push(fecha.getTime());
+  });
+
+  // Paso 3: por cada médico, contar pacientes que llegaron a kine dentro de 90 días
+  const VENTANA_MS = 90 * 24 * 60 * 60 * 1000;
+  const resultado = [];
+  for (const [nombre, pacientesMap] of Object.entries(consultas)) {
+    let aKine = 0;
+    for (const [pid, consultaMs] of pacientesMap) {
+      const visitas = kineVisitas[pid];
+      if (!visitas) continue;
+      if (visitas.some(kMs => kMs >= consultaMs && kMs <= consultaMs + VENTANA_MS)) aKine++;
+    }
+    resultado.push({ nombre, consultas: pacientesMap.size, aKine, pct: pacientesMap.size ? Math.round(aKine / pacientesMap.size * 100) : 0 });
+  }
+
+  return resultado.filter(d => d.consultas > 0).sort((a, b) => b.aKine - a.aKine).slice(0, n);
 }
 
 Papa.parse(CSV_URL, {
@@ -973,33 +969,28 @@ function render() {
         </tr>`;
       }).join('');
 
-  // ── Top 10 Derivadores ─────────────────────────────────────────────────────
+  // ── Top 10 Derivadores a Kine ──────────────────────────────────────────────
   const cardDeriv = document.getElementById('card-derivadores');
   if (TABS_CON_DERIVADORES.has(activeTab)) {
     cardDeriv.style.display = '';
-    const derivadores = getTopDerivadores(data);
-    const maxCount = derivadores.length > 0 ? derivadores[0].count : 1;
-    // Nombre legible de la pestaña actual para el título
-    const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
-    document.getElementById('title-derivadores').textContent = `🔀 Top 10 Derivadores → ${tabLabel}`;
-    document.getElementById('desc-derivadores').textContent =
-      `Médicos (DR./DRA.) que atendieron al mismo paciente en CEMTRA antes de llegar a ${tabLabel}.`;
+    const derivadores = getDerivacionesReales();
+    const maxKine = derivadores.length > 0 ? derivadores[0].aKine : 1;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
-      ? '<tr><td colspan="3" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación</td></tr>'
+      ? '<tr><td colspan="5" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación para el período seleccionado</td></tr>'
       : derivadores.map((d, i) => {
-          const pct      = Math.round((d.count / maxCount) * 100);
-          const fuenteTag = d.mediweb > d.inferido
-            ? `<span style="font-size:0.72rem;color:#2b6cb0;margin-left:6px">Mediweb</span>`
-            : `<span style="font-size:0.72rem;color:#718096;margin-left:6px">Inferido</span>`;
+          const barPct = Math.round((d.aKine / maxKine) * 100);
+          const pctColor = d.pct >= 30 ? '#38a169' : d.pct >= 15 ? '#dd6b20' : '#718096';
           return `<tr>
             <td><strong>${i+1}</strong></td>
-            <td>${d.nombre}${fuenteTag}</td>
+            <td>${d.nombre}</td>
+            <td style="text-align:center">${fmtN(d.consultas)}</td>
             <td>
-              <span class="badge-deriv">${fmtN(d.count)}</span>
-              <div class="mini-bar-bg" style="margin-top:4px;max-width:120px">
-                <div class="mini-bar" style="width:${pct}%;background:#38a169"></div>
+              <span class="badge-deriv">${fmtN(d.aKine)}</span>
+              <div class="mini-bar-bg" style="margin-top:4px;max-width:100px">
+                <div class="mini-bar" style="width:${barPct}%;background:#38a169"></div>
               </div>
             </td>
+            <td style="text-align:center;font-weight:600;color:${pctColor}">${d.pct}%</td>
           </tr>`;
         }).join('');
   } else {
