@@ -349,7 +349,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 
     <!-- Top 10 Derivadores -->
     <div class="card" id="card-derivadores" style="overflow-x:auto;display:none">
-      <div class="card-title" id="title-derivadores">🔀 Top 10 Derivadores a Kine</div>
+      <div class="card-title" id="title-derivadores">🔀 Derivadores a Kine</div>
       <p style="font-size:0.78rem;color:#718096;margin-bottom:12px" id="desc-derivadores">
         De los pacientes que cada médico atendió en el período, cuántos llegaron a kine en los 90 días siguientes.
       </p>
@@ -373,7 +373,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 <footer>Dashboard CEMTRA · Datos en tiempo real desde Google Sheets</footer>
 
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU63c1-QwLVbDscd1EjrhZadJ2-ZWt56oUwaO_DHTWn_1Vw7FPKgQ3e0CNOXMv1Q/pub?output=csv&t=' + Date.now();
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTFl-KydR95XEoEc3sSPLh9N9Jnz1SMMp43n75ad0lvQvixYX6zDNHeDEsm5ePHlH_lVYos2x20Byvr/pub?output=csv&t=' + Date.now();
 
 let rawData = [];
 let charts  = {};
@@ -549,15 +549,24 @@ function buildPatientHistory() {
   patientHistory = tmp;
 }
 
-function getDerivacionesReales(destFilter, n = 10) {
+function getDerivacionesReales(destFilter, n = Infinity) {
   const anio = document.getElementById('f-anio').value;
   const mesV = document.getElementById('f-mes').value;
   const pago = document.getElementById('f-pago').value;
 
   // Paso 1: consultas médicas en el período — Map<doctor, Map<patientId, fechaMs>>
+  // Excluye Examen y Administrativo tanto por ESPECIALIDAD como por SALA
+  const EXCLUIR = ['examen', 'administrativo', 'administración', 'administracion'];
+  const esConsulta = r => {
+    const esp  = (r['ESPECIALIDAD'] || '').toLowerCase().trim();
+    const sala = (r['SALA'] || '').toLowerCase().trim();
+    return !EXCLUIR.some(ex => esp.includes(ex) || sala.includes(ex));
+  };
+
   const consultas = {};
   rawData.forEach(r => {
     if (!isMedico(r)) return;
+    if (!esConsulta(r)) return;
     if (anio && getAnio(r['FECHA']) !== anio) return;
     if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
     if (pago && r['TIPO PAGO'] !== pago) return;
@@ -995,7 +1004,7 @@ function render() {
     const derivadores = getDerivacionesReales(DERIV_DESTINO[activeTab]);
     const maxKine = derivadores.length > 0 ? derivadores[0].aKine : 1;
     const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
-    document.getElementById('title-derivadores').textContent = `🔀 Top 10 Derivadores → ${tabLabel}`;
+    document.getElementById('title-derivadores').textContent = `🔀 Derivadores → ${tabLabel}`;
     document.getElementById('desc-derivadores').textContent =
       `De los pacientes atendidos por cada médico en el período, cuántos llegaron a ${tabLabel} en los 90 días siguientes.`;
     document.getElementById('deriv-col-destino').textContent = `→ ${tabLabel}`;
