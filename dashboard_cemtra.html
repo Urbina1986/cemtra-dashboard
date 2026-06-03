@@ -597,7 +597,7 @@ function getDerivacionesReales(destFilter, n = 10) {
     resultado.push({ nombre, consultas: pacientesMap.size, aKine: llegaron, pct: pacientesMap.size ? Math.round(llegaron / pacientesMap.size * 100) : 0 });
   }
 
-  return resultado.filter(d => d.consultas > 0).sort((a, b) => b.aKine - a.aKine).slice(0, n);
+  return resultado.filter(d => d.consultas > 0).sort((a, b) => b.pct - a.pct || b.aKine - a.aKine).slice(0, n);
 }
 
 Papa.parse(CSV_URL, {
@@ -608,10 +608,9 @@ Papa.parse(CSV_URL, {
     const esTitulo = primeraFila.length === 1 || (primeraFila[0] || '').toString().toUpperCase().includes('REPORTE');
     const headers = esTitulo ? results.data[1] : results.data[0];
     const dataStart = esTitulo ? 2 : 1;
-    const ESTADOS_VALIDOS = new Set(['atención','espera','finalizado','observado']);
     rawData = results.data.slice(dataStart).map(row => {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
-    }).filter(r => r['#'] && r['#']!=='#' && ESTADOS_VALIDOS.has((r['ESTADO']||'').toLowerCase().trim()));
+    }).filter(r => r['#'] && r['#']!=='#');
 
     buildPatientHistory();
     populateFilters();
