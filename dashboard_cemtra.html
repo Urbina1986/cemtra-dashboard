@@ -384,12 +384,32 @@ let MEDICOS_LIST = [];
 let KINE_LIST    = [];
 let patientHistory = {}; // PACIENTE_ID → [{fechaMs, sala, especialista}] ordenado por fecha
 
-// Derivadores: visible en todas las pestañas
+// Derivadores: visible en todas las pestañas de sala (excl. Todos y Médicos)
 const TABS_CON_DERIVADORES = new Set([
-  'todos','kine','kine_todos','kine_kine','kine_ondas','kine_footscan','kine_reintegro',
+  'kine','kine_todos','kine_kine','kine_ondas','kine_footscan','kine_reintegro',
   'ortesis','procedimientos','imagenologia','yeso','eco','to','nutricionistas',
-  'medicos','rayos','nutriologa','bariatrica'
+  'rayos','nutriologa','bariatrica'
 ]);
+
+// Filtro de sala destino por pestaña (para calcular derivaciones reales)
+const DERIV_DESTINO = {
+  kine:            r => isSalaKine(r),
+  kine_todos:      r => isSalaKine(r),
+  kine_kine:       r => isSoloKine(r),
+  kine_ondas:      r => isOndas(r),
+  kine_footscan:   r => isFootscan(r),
+  kine_reintegro:  r => isReintegro(r),
+  ortesis:         r => sala(r,'ORTESIS'),
+  procedimientos:  r => (r['SALA']||'').toUpperCase()==='SALA DE PROCEDIMIENTOS',
+  imagenologia:    r => sala(r,'IMAGENOLOGIA'),
+  yeso:            r => sala(r,'YESO'),
+  eco:             r => isEco(r),
+  to:              r => isTO(r),
+  nutricionistas:  r => sala(r,'NUTRICIONISTA'),
+  rayos:           r => sala(r,'RAYOS'),
+  nutriologa:      r => sala(r,'NUTRIOL'),
+  bariatrica:      r => sala(r,'BARIATRICA'),
+};
 
 const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                        'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -529,13 +549,12 @@ function buildPatientHistory() {
   patientHistory = tmp;
 }
 
-function getDerivacionesReales(n = 10) {
+function getDerivacionesReales(destFilter, n = 10) {
   const anio = document.getElementById('f-anio').value;
   const mesV = document.getElementById('f-mes').value;
   const pago = document.getElementById('f-pago').value;
 
-  // Paso 1: consultas médicas en el período seleccionado
-  // Por cada médico: Map<patientId, fechaMs más temprana de consulta>
+  // Paso 1: consultas médicas en el período — Map<doctor, Map<patientId, fechaMs>>
   const consultas = {};
   rawData.forEach(r => {
     if (!isMedico(r)) return;
@@ -553,29 +572,29 @@ function getDerivacionesReales(n = 10) {
     if (!prev || fecha.getTime() < prev) consultas[nombre].set(pid, fecha.getTime());
   });
 
-  // Paso 2: índice de visitas a kine por paciente (todas las fechas, sin filtro de período)
-  const kineVisitas = {};
+  // Paso 2: índice de visitas a la sala destino por paciente (sin filtro de período)
+  const destinoVisitas = {};
   rawData.forEach(r => {
-    if (!isSalaKine(r)) return;
+    if (!destFilter(r)) return;
     const pid = r['RUT'] || r['PACIENTE_ID'];
     if (!pid) return;
     const fecha = parseFecha(r['FECHA']);
     if (!fecha) return;
-    if (!kineVisitas[pid]) kineVisitas[pid] = [];
-    kineVisitas[pid].push(fecha.getTime());
+    if (!destinoVisitas[pid]) destinoVisitas[pid] = [];
+    destinoVisitas[pid].push(fecha.getTime());
   });
 
-  // Paso 3: por cada médico, contar pacientes que llegaron a kine dentro de 90 días
+  // Paso 3: contar pacientes que llegaron a la sala destino dentro de 90 días
   const VENTANA_MS = 90 * 24 * 60 * 60 * 1000;
   const resultado = [];
   for (const [nombre, pacientesMap] of Object.entries(consultas)) {
-    let aKine = 0;
+    let llegaron = 0;
     for (const [pid, consultaMs] of pacientesMap) {
-      const visitas = kineVisitas[pid];
+      const visitas = destinoVisitas[pid];
       if (!visitas) continue;
-      if (visitas.some(kMs => kMs >= consultaMs && kMs <= consultaMs + VENTANA_MS)) aKine++;
+      if (visitas.some(ms => ms >= consultaMs && ms <= consultaMs + VENTANA_MS)) llegaron++;
     }
-    resultado.push({ nombre, consultas: pacientesMap.size, aKine, pct: pacientesMap.size ? Math.round(aKine / pacientesMap.size * 100) : 0 });
+    resultado.push({ nombre, consultas: pacientesMap.size, aKine: llegaron, pct: pacientesMap.size ? Math.round(llegaron / pacientesMap.size * 100) : 0 });
   }
 
   return resultado.filter(d => d.consultas > 0).sort((a, b) => b.aKine - a.aKine).slice(0, n);
@@ -973,8 +992,12 @@ function render() {
   const cardDeriv = document.getElementById('card-derivadores');
   if (TABS_CON_DERIVADORES.has(activeTab)) {
     cardDeriv.style.display = '';
-    const derivadores = getDerivacionesReales();
+    const derivadores = getDerivacionesReales(DERIV_DESTINO[activeTab]);
     const maxKine = derivadores.length > 0 ? derivadores[0].aKine : 1;
+    const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
+    document.getElementById('title-derivadores').textContent = `🔀 Top 10 Derivadores → ${tabLabel}`;
+    document.getElementById('desc-derivadores').textContent =
+      `De los pacientes atendidos por cada médico en el período, cuántos llegaron a ${tabLabel} en los 90 días siguientes.`;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
       ? '<tr><td colspan="5" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación para el período seleccionado</td></tr>'
       : derivadores.map((d, i) => {
