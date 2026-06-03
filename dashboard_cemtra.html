@@ -359,7 +359,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
             <th>#</th>
             <th>Médico</th>
             <th>Consultas</th>
-            <th>→ Kine</th>
+            <th id="deriv-col-destino">→ Destino</th>
             <th>%</th>
           </tr>
         </thead>
@@ -998,6 +998,7 @@ function render() {
     document.getElementById('title-derivadores').textContent = `🔀 Top 10 Derivadores → ${tabLabel}`;
     document.getElementById('desc-derivadores').textContent =
       `De los pacientes atendidos por cada médico en el período, cuántos llegaron a ${tabLabel} en los 90 días siguientes.`;
+    document.getElementById('deriv-col-destino').textContent = `→ ${tabLabel}`;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
       ? '<tr><td colspan="5" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación para el período seleccionado</td></tr>'
       : derivadores.map((d, i) => {
