@@ -878,7 +878,8 @@ function getFiltered() {
     if (mesV!=='' && getMesNum(r['FECHA'])!==parseInt(mesV)) return false;
     if (diaV!=='' && getDia(r['FECHA'])!==parseInt(diaV)) return false;
     if (pago && r['TIPO PAGO']!==pago) return false;
-    if (parseTotal(r['TOTAL']) === 0) return false;
+    // Excluir solo "Revisión de Exámenes" sin costo (no excluir prepagados de Kine u otros)
+    if (parseTotal(r['TOTAL']) === 0 && (r['EXAMEN']||'').toLowerCase().includes('revision')) return false;
     return true;
   });
 }
