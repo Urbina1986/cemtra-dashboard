@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -542,7 +543,8 @@ function getTopDerivadores(data, n=10) {
 
     // 1. DERIVADOR directo desde Mediweb — solo si no es kinesiólogo ni técnico
     const derivMediweb = (r['DERIVADOR'] || '').trim();
-    if (derivMediweb && derivMediweb !== '-') {
+    const DERIVADOR_INVALIDO = ['-', 'DESCONOCIDA REFERENCIA', 'ILEGIBLE REFERENCIA'];
+    if (derivMediweb && !DERIVADOR_INVALIDO.includes(derivMediweb.toUpperCase())) {
       // Verificar que la sala actual del derivador sea médico buscando en rawData
       // Como solo tenemos el nombre, confiamos en Mediweb pero excluimos KLGO/KLGA
       const esKine = /^(KLGO|KLGA)\./i.test(derivMediweb);
