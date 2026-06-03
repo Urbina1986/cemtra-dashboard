@@ -248,6 +248,14 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
     </select>
   </div>
 
+  <!-- Dropdown Rayos -->
+  <div id="rayos-dropdown-bar" style="display:none; background:#2a4a7f; padding:10px 24px; align-items:center; gap:12px;">
+    <label style="color:rgba(255,255,255,0.75); font-size:0.8rem; font-weight:600; white-space:nowrap;">☢️ Seleccionar especialista:</label>
+    <select id="rayos-select" onchange="onRayosSelect(this)"
+      style="padding:7px 12px; border-radius:8px; border:none; font-size:0.85rem; min-width:260px; cursor:pointer; background:white; color:#1a365d;">
+    </select>
+  </div>
+
   <div class="container">
 
     <!-- Filtros -->
@@ -386,8 +394,10 @@ let charts  = {};
 let activeTab = 'todos';
 let activeMedicoSala = null;
 let activeKineSala   = null;
+let activeRayosEsp   = null;
 let MEDICOS_LIST = [];
 let KINE_LIST    = [];
+let RAYOS_LIST   = [];
 let patientHistory = {}; // PACIENTE_ID → [{fechaMs, sala, especialista}] ordenado por fecha
 
 // Derivadores: visible en todas las pestañas de sala (excl. Todos y Médicos)
@@ -640,6 +650,7 @@ Papa.parse(CSV_URL, {
     populateFilters();
     buildMedicosSubtabs();
     buildKineSubtabs();
+    buildRayosSubtabs();
     render();
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='block';
@@ -659,25 +670,31 @@ function setTab(tab, btn) {
   const kineSubtabs    = document.getElementById('kine-subtabs');
   const kineDropbar    = document.getElementById('kine-dropdown-bar');
   const medicosDropbar = document.getElementById('medicos-dropdown-bar');
+  const rayosDropbar   = document.getElementById('rayos-dropdown-bar');
 
   kineSubtabs.style.display    = 'none';
   kineDropbar.style.display    = 'none';
   medicosDropbar.style.display = 'none';
+  rayosDropbar.style.display   = 'none';
   activeMedicoSala = null;
   activeKineSala   = null;
+  activeRayosEsp   = null;
 
   if (tab === 'kine') {
     kineSubtabs.style.display = 'block';
     activeTab = 'kine_todos';
     document.querySelectorAll('#kine-subtabs .subtab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('#kine-subtabs .subtab-btn').classList.add('active');
-    // mostrar dropdown de kinesiólogos por defecto
     kineDropbar.style.display = 'flex';
     document.getElementById('kine-select').value = '';
   } else if (tab === 'medicos') {
     medicosDropbar.style.display = 'flex';
     activeTab = 'medicos';
     document.getElementById('medico-select').value = '';
+  } else if (tab === 'rayos') {
+    rayosDropbar.style.display = 'flex';
+    activeTab = 'rayos';
+    document.getElementById('rayos-select').value = '';
   } else {
     activeTab = tab;
   }
@@ -743,6 +760,27 @@ function buildMedicosSubtabs() {
     html += `<option value="${sala}">${label}</option>`;
   });
   sel.innerHTML = html;
+}
+
+function buildRayosSubtabs() {
+  const espCount = {};
+  rawData.filter(r=>sala(r,'RAYOS')).forEach(r=>{
+    const e=(r['ESPECIALISTA']||'').trim();
+    if (e) espCount[e]=(espCount[e]||0)+1;
+  });
+  RAYOS_LIST = Object.entries(espCount).sort((a,b)=>b[1]-a[1]).map(([e])=>e);
+
+  const sel = document.getElementById('rayos-select');
+  let html = `<option value="">☢️ Todos los especialistas</option>`;
+  RAYOS_LIST.forEach(esp => {
+    html += `<option value="${esp}">${esp}</option>`;
+  });
+  sel.innerHTML = html;
+}
+
+function onRayosSelect(sel) {
+  activeRayosEsp = sel.value || null;
+  render();
 }
 
 // ─── Filtros ──────────────────────────────────────────────────────────────────
@@ -832,6 +870,7 @@ function getFiltered() {
     if (!tabFn(r)) return false;
     if (activeMedicoSala && (r['SALA']||'').trim() !== activeMedicoSala) return false;
     if (activeKineSala   && (r['SALA']||'').trim() !== activeKineSala)   return false;
+    if (activeRayosEsp   && (r['ESPECIALISTA']||'').trim() !== activeRayosEsp) return false;
     if (anio && getAnio(r['FECHA'])!==anio) return false;
     if (mesV!=='' && getMesNum(r['FECHA'])!==parseInt(mesV)) return false;
     if (diaV!=='' && getDia(r['FECHA'])!==parseInt(diaV)) return false;
@@ -849,6 +888,7 @@ function getFilteredComparativo() {
     if (!tabFn(r)) return false;
     if (activeMedicoSala && (r['SALA']||'').trim() !== activeMedicoSala) return false;
     if (activeKineSala   && (r['SALA']||'').trim() !== activeKineSala)   return false;
+    if (activeRayosEsp   && (r['ESPECIALISTA']||'').trim() !== activeRayosEsp) return false;
     if (pago && r['TIPO PAGO']!==pago) return false;
     return true;
   });
@@ -929,12 +969,13 @@ function render() {
   // ── Tabla Especialidad ─────────────────────────────────────────────────────
   const espTitle   = activeMedicoSala ? '🩺 Prestaciones del médico'
                    : activeKineSala   ? '🦵 Prestaciones del kinesiólogo'
+                   : activeRayosEsp   ? `☢️ Exámenes de ${activeRayosEsp}`
                    : tab.espTitle;
-  const espKey     = (activeMedicoSala || activeKineSala) ? 'EXAMEN' : tab.espKey;
-  const espNombre  = (activeMedicoSala || activeKineSala) ? 'Examen / Prestación' : (tab.tablaNombre || 'Categoría');
-  // Ancho completo cuando se ve un médico o kinesiólogo específico
+  const espKey     = (activeMedicoSala || activeKineSala || activeRayosEsp) ? 'EXAMEN' : tab.espKey;
+  const espNombre  = (activeMedicoSala || activeKineSala || activeRayosEsp) ? 'Examen / Prestación' : (tab.tablaNombre || 'Categoría');
+  // Ancho completo cuando se ve un especialista específico
   const gridEspHorario = document.getElementById('grid-esp-horario');
-  if (activeMedicoSala || activeKineSala) {
+  if (activeMedicoSala || activeKineSala || activeRayosEsp) {
     gridEspHorario.style.gridTemplateColumns = '1fr';
   } else {
     gridEspHorario.style.gridTemplateColumns = '';
@@ -950,7 +991,7 @@ function render() {
   document.getElementById('esp-body').innerHTML = espSorted.map(([nombre, aten])=>{
     const prod = espProd[nombre]||0;
     const pct  = Math.round(aten/maxAten*100);
-    const label= (activeMedicoSala || activeKineSala) ? nombre : (nombre.length>32 ? nombre.slice(0,30)+'…' : nombre);
+    const label= (activeMedicoSala || activeKineSala || activeRayosEsp) ? nombre : (nombre.length>32 ? nombre.slice(0,30)+'…' : nombre);
     return `<tr>
       <td>${label}</td>
       <td style="text-align:right">${fmtN(aten)}</td>
