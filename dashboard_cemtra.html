@@ -250,7 +250,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 
   <!-- Dropdown Rayos -->
   <div id="rayos-dropdown-bar" style="display:none; background:#2a4a7f; padding:10px 24px; align-items:center; gap:12px;">
-    <label style="color:rgba(255,255,255,0.75); font-size:0.8rem; font-weight:600; white-space:nowrap;">☢️ Seleccionar especialista:</label>
+    <label style="color:rgba(255,255,255,0.75); font-size:0.8rem; font-weight:600; white-space:nowrap;">☢️ Derivaciones a Rayos por médico:</label>
     <select id="rayos-select" onchange="onRayosSelect(this)"
       style="padding:7px 12px; border-radius:8px; border:none; font-size:0.85rem; min-width:260px; cursor:pointer; background:white; color:#1a365d;">
     </select>
@@ -763,19 +763,22 @@ function buildMedicosSubtabs() {
 }
 
 function buildRayosSubtabs() {
-  const espCount = {};
-  rawData.filter(r=>sala(r,'RAYOS')).forEach(r=>{
-    const e=(r['ESPECIALISTA']||'').trim();
-    if (e) espCount[e]=(espCount[e]||0)+1;
-  });
-  RAYOS_LIST = Object.entries(espCount).sort((a,b)=>b[1]-a[1]).map(([e])=>e);
-
+  // Reutiliza la lista de médicos ya construida
   const sel = document.getElementById('rayos-select');
-  let html = `<option value="">☢️ Todos los especialistas</option>`;
-  RAYOS_LIST.forEach(esp => {
-    html += `<option value="${esp}">${esp}</option>`;
+  let html = `<option value="">👨‍⚕️ Todos los médicos</option>`;
+  MEDICOS_LIST.forEach(salaVal => {
+    const nombre = salaVal.split(' - ')[0]
+      .replace(/^DR\./i,'Dr.').replace(/^DRA\./i,'Dra.');
+    const esp = salaVal.includes(' - ') ? salaVal.split(' - ').slice(1).join(' - ') : '';
+    const label = esp ? `${nombre} — ${esp}` : nombre;
+    html += `<option value="${salaVal}">${label}</option>`;
   });
   sel.innerHTML = html;
+}
+
+// Extrae el apellido+nombre del valor de SALA de un médico para cruzar con DERIVADOR
+function nombreDesdeSala(salaVal) {
+  return salaVal.replace(/^DR[A]?\.\s*/i,'').split(' - ')[0].trim().toUpperCase();
 }
 
 function onRayosSelect(sel) {
@@ -870,7 +873,7 @@ function getFiltered() {
     if (!tabFn(r)) return false;
     if (activeMedicoSala && (r['SALA']||'').trim() !== activeMedicoSala) return false;
     if (activeKineSala   && (r['SALA']||'').trim() !== activeKineSala)   return false;
-    if (activeRayosEsp   && (r['ESPECIALISTA']||'').trim() !== activeRayosEsp) return false;
+    if (activeRayosEsp   && (r['DERIVADOR']||'').trim().toUpperCase() !== nombreDesdeSala(activeRayosEsp)) return false;
     if (anio && getAnio(r['FECHA'])!==anio) return false;
     if (mesV!=='' && getMesNum(r['FECHA'])!==parseInt(mesV)) return false;
     if (diaV!=='' && getDia(r['FECHA'])!==parseInt(diaV)) return false;
@@ -888,7 +891,7 @@ function getFilteredComparativo() {
     if (!tabFn(r)) return false;
     if (activeMedicoSala && (r['SALA']||'').trim() !== activeMedicoSala) return false;
     if (activeKineSala   && (r['SALA']||'').trim() !== activeKineSala)   return false;
-    if (activeRayosEsp   && (r['ESPECIALISTA']||'').trim() !== activeRayosEsp) return false;
+    if (activeRayosEsp   && (r['DERIVADOR']||'').trim().toUpperCase() !== nombreDesdeSala(activeRayosEsp)) return false;
     if (pago && r['TIPO PAGO']!==pago) return false;
     return true;
   });
@@ -969,7 +972,7 @@ function render() {
   // ── Tabla Especialidad ─────────────────────────────────────────────────────
   const espTitle   = activeMedicoSala ? '🩺 Prestaciones del médico'
                    : activeKineSala   ? '🦵 Prestaciones del kinesiólogo'
-                   : activeRayosEsp   ? `☢️ Exámenes de ${activeRayosEsp}`
+                   : activeRayosEsp   ? `☢️ Exámenes derivados por ${activeRayosEsp.split(' - ')[0].replace(/^DR[A]?\.\s*/i,'')}`
                    : tab.espTitle;
   const espKey     = (activeMedicoSala || activeKineSala || activeRayosEsp) ? 'EXAMEN' : tab.espKey;
   const espNombre  = (activeMedicoSala || activeKineSala || activeRayosEsp) ? 'Examen / Prestación' : (tab.tablaNombre || 'Categoría');
