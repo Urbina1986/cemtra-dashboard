@@ -357,15 +357,15 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
     <div class="card" id="card-derivadores" style="overflow-x:auto;display:none">
       <div class="card-title" id="title-derivadores">🔀 Derivadores a Kine</div>
       <p style="font-size:0.78rem;color:#718096;margin-bottom:12px" id="desc-derivadores">
-        De los pacientes que cada médico atendió en el período, cuántos llegaron a kine en los 90 días siguientes.
+        Derivaciones registradas en Mediweb hacia esta sala en el período seleccionado.
       </p>
       <table class="tbl-deriv">
         <thead>
           <tr>
             <th>#</th>
             <th>Médico</th>
-            <th>Consultas</th>
-            <th id="deriv-col-destino">→ Destino</th>
+            <th>Pac. Atendidos</th>
+            <th id="deriv-col-destino">→ Pac. Derivados</th>
             <th>%</th>
           </tr>
         </thead>
@@ -560,59 +560,112 @@ function getDerivacionesReales(destFilter, n = Infinity) {
   const mesV = document.getElementById('f-mes').value;
   const pago = document.getElementById('f-pago').value;
 
-  // Paso 1: consultas médicas en el período — Map<doctor, Map<patientId, fechaMs>>
-  // Excluye Examen y Administrativo tanto por ESPECIALIDAD como por SALA
-  const EXCLUIR = ['examen', 'administrativo', 'administración', 'administracion'];
-  const esConsulta = r => {
-    const esp  = (r['ESPECIALIDAD'] || '').toLowerCase().trim();
-    const sala = (r['SALA'] || '').toLowerCase().trim();
-    return !EXCLUIR.some(ex => esp.includes(ex) || sala.includes(ex));
-  };
+  const EXCLUIR_DERIV = new Set(['-','DESCONOCIDA REFERENCIA','ILEGIBLE REFERENCIA','','NULL','NONE']);
+  const EXCLUIR_ESP   = ['examen', 'administrativo', 'administración', 'administracion'];
+  const VENTANA_MS    = 60 * 24 * 60 * 60 * 1000; // 60 días
 
-  const consultas = {};
+  // Mapa de normalización: "RAUL ESPINOZA" → "Dr. Raúl Espinoza - Traumatología"
+  const salaUpToDisplay   = {};
+  const nombreUpToDisplay = {};
   rawData.forEach(r => {
     if (!isMedico(r)) return;
-    if (!esConsulta(r)) return;
+    const sala = (r['SALA'] || '').trim();
+    if (!sala) return;
+    const salaUp = sala.toUpperCase();
+    if (!salaUpToDisplay[salaUp]) {
+      const display = sala.split(' ').map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+      salaUpToDisplay[salaUp] = display;
+      const nameOnly = salaUp.replace(/^DR\. /, '').replace(/^DRA\. /, '').split(' - ')[0].trim();
+      if (nameOnly && !nombreUpToDisplay[nameOnly]) nombreUpToDisplay[nameOnly] = display;
+    }
+  });
+
+  // Paso 1: pacientes únicos por médico en el período (para calcular %)
+  const consultasPacientes = {}; // display → Set<RUT>
+  rawData.forEach(r => {
+    if (!isMedico(r)) return;
+    const esp   = (r['ESPECIALIDAD'] || '').toLowerCase().trim();
+    const salaL = (r['SALA'] || '').toLowerCase().trim();
+    if (EXCLUIR_ESP.some(ex => esp.includes(ex) || salaL.includes(ex))) return;
     if (anio && getAnio(r['FECHA']) !== anio) return;
     if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
     if (pago && r['TIPO PAGO'] !== pago) return;
-    const fecha = parseFecha(r['FECHA']);
-    if (!fecha) return;
-    const pid = r['RUT'] || r['PACIENTE_ID'];
+    const pid = (r['RUT'] || r['PACIENTE_ID'] || '').trim();
     if (!pid) return;
-    const nombre = (r['SALA'] || '').trim().split(' ')
-      .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
-    if (!consultas[nombre]) consultas[nombre] = new Map();
-    const prev = consultas[nombre].get(pid);
-    if (!prev || fecha.getTime() < prev) consultas[nombre].set(pid, fecha.getTime());
+    const display = salaUpToDisplay[(r['SALA'] || '').trim().toUpperCase()];
+    if (!display) return;
+    if (!consultasPacientes[display]) consultasPacientes[display] = new Set();
+    consultasPacientes[display].add(pid);
   });
 
-  // Paso 2: índice de visitas a la sala destino por paciente (sin filtro de período)
-  const destinoVisitas = {};
+  // Índice para cruce: RUT → [{display, fechaMs}] — sin filtro de período
+  const consultasPorPaciente = {};
+  rawData.forEach(r => {
+    if (!isMedico(r)) return;
+    const esp   = (r['ESPECIALIDAD'] || '').toLowerCase().trim();
+    const salaL = (r['SALA'] || '').toLowerCase().trim();
+    if (EXCLUIR_ESP.some(ex => esp.includes(ex) || salaL.includes(ex))) return;
+    const pid = (r['RUT'] || r['PACIENTE_ID'] || '').trim();
+    if (!pid) return;
+    const fecha = parseFecha(r['FECHA']);
+    if (!fecha) return;
+    const display = salaUpToDisplay[(r['SALA'] || '').trim().toUpperCase()];
+    if (!display) return;
+    if (!consultasPorPaciente[pid]) consultasPorPaciente[pid] = [];
+    consultasPorPaciente[pid].push({ display, fechaMs: fecha.getTime() });
+  });
+
+  // Paso 2: derivaciones por paciente único
+  // → DERIVADOR válido: atribuir directo
+  // → DERIVADOR vacío:  buscar consulta médica del paciente en los 60 días previos
+  // Cada paciente cuenta UNA SOLA VEZ por médico (sin importar cuántos registros tenga en esa sala)
+  const derivaciones = {}; // display → Set<RUT>
   rawData.forEach(r => {
     if (!destFilter(r)) return;
-    const pid = r['RUT'] || r['PACIENTE_ID'];
+    if (anio && getAnio(r['FECHA']) !== anio) return;
+    if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
+    if (pago && r['TIPO PAGO'] !== pago) return;
+
+    const pid = (r['RUT'] || r['PACIENTE_ID'] || '').trim();
     if (!pid) return;
-    const fecha = parseFecha(r['FECHA']);
-    if (!fecha) return;
-    if (!destinoVisitas[pid]) destinoVisitas[pid] = [];
-    destinoVisitas[pid].push(fecha.getTime());
+
+    const deriv = (r['DERIVADOR'] || '').trim().toUpperCase();
+    if (deriv && !EXCLUIR_DERIV.has(deriv)) {
+      // Método directo
+      const display = nombreUpToDisplay[deriv];
+      if (display) {
+        if (!derivaciones[display]) derivaciones[display] = new Set();
+        derivaciones[display].add(pid);
+      }
+    } else {
+      // Método cruce 60 días: consulta médica más reciente previa al destino
+      const fechaDest = parseFecha(r['FECHA']);
+      if (!fechaDest) return;
+      const destMs = fechaDest.getTime();
+      const visitas = consultasPorPaciente[pid];
+      if (!visitas) return;
+      let mejor = null;
+      for (const v of visitas) {
+        if (v.fechaMs <= destMs && v.fechaMs >= destMs - VENTANA_MS) {
+          if (!mejor || v.fechaMs > mejor.fechaMs) mejor = v;
+        }
+      }
+      if (mejor) {
+        if (!derivaciones[mejor.display]) derivaciones[mejor.display] = new Set();
+        derivaciones[mejor.display].add(pid);
+      }
+    }
   });
 
-  // Paso 3: contar pacientes que llegaron a la sala destino dentro de 90 días
-  const VENTANA_MS = 90 * 24 * 60 * 60 * 1000;
+  // Construir resultado contando pacientes únicos
   const resultado = [];
-  for (const [nombre, pacientesMap] of Object.entries(consultas)) {
-    let llegaron = 0;
-    for (const [pid, consultaMs] of pacientesMap) {
-      const visitas = destinoVisitas[pid];
-      if (!visitas) continue;
-      if (visitas.some(ms => ms >= consultaMs && ms <= consultaMs + VENTANA_MS)) llegaron++;
-    }
-    resultado.push({ nombre, consultas: pacientesMap.size, aKine: llegaron, pct: pacientesMap.size ? Math.round(llegaron / pacientesMap.size * 100) : 0 });
+  for (const [nombre, pacientesSet] of Object.entries(derivaciones)) {
+    const d = pacientesSet.size;
+    const c = (consultasPacientes[nombre] || new Set()).size;
+    resultado.push({ nombre, consultas: c, aKine: d, pct: c ? Math.round(d / c * 100) : 0 });
   }
 
-  return resultado.filter(d => d.consultas > 0).sort((a, b) => b.pct - a.pct || b.aKine - a.aKine).slice(0, n);
+  return resultado.sort((a, b) => b.aKine - a.aKine || b.pct - a.pct).slice(0, n);
 }
 
 Papa.parse(CSV_URL, {
@@ -1052,7 +1105,7 @@ function render() {
     const tabLabel = document.querySelector('.tab-btn.active')?.textContent?.trim() || 'esta sala';
     document.getElementById('title-derivadores').textContent = `🔀 Derivadores → ${tabLabel}`;
     document.getElementById('desc-derivadores').textContent =
-      `De los pacientes atendidos por cada médico en el período, cuántos llegaron a ${tabLabel} en los 90 días siguientes.`;
+      `Derivaciones registradas en Mediweb hacia ${tabLabel} en el período seleccionado.`;
     document.getElementById('deriv-col-destino').textContent = `→ ${tabLabel}`;
     document.getElementById('deriv-body').innerHTML = derivadores.length === 0
       ? '<tr><td colspan="5" style="color:#a0aec0;padding:20px;text-align:center">Sin datos de derivación para el período seleccionado</td></tr>'
