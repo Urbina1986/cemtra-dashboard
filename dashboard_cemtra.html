@@ -248,14 +248,6 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
     </select>
   </div>
 
-  <!-- Dropdown Rayos -->
-  <div id="rayos-dropdown-bar" style="display:none; background:#2a4a7f; padding:10px 24px; align-items:center; gap:12px;">
-    <label style="color:rgba(255,255,255,0.75); font-size:0.8rem; font-weight:600; white-space:nowrap;">☢️ Derivaciones a Rayos por médico:</label>
-    <select id="rayos-select" onchange="onRayosSelect(this)"
-      style="padding:7px 12px; border-radius:8px; border:none; font-size:0.85rem; min-width:260px; cursor:pointer; background:white; color:#1a365d;">
-    </select>
-  </div>
-
   <div class="container">
 
     <!-- Filtros -->
@@ -316,7 +308,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
     </div>
 
     <!-- Dos columnas: tabla especialidad + patrón horario -->
-    <div id="grid-esp-horario" class="grid-2col" style="margin-top:20px">
+    <div class="grid-2col" style="margin-top:20px">
       <div class="card" style="overflow-x:auto">
         <div class="card-title" id="title-esp">🏥 Atenciones por Especialidad</div>
         <table class="tbl-esp" id="tabla-especialidad">
@@ -338,12 +330,6 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
       </div>
     </div>
 
-    <!-- Gráfico días de atención -->
-    <div class="card grid-full" style="margin-top:20px">
-      <div class="card-title">📅 Atenciones por Día de la Semana</div>
-      <div class="chart-wrap"><canvas id="chart-dias"></canvas></div>
-    </div>
-
     <!-- Tabla Top 10 -->
     <div class="card" style="overflow-x:auto">
       <div class="card-title" id="title-tabla">👨‍⚕️ Top 10 por Producción</div>
@@ -363,7 +349,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 
     <!-- Top 10 Derivadores -->
     <div class="card" id="card-derivadores" style="overflow-x:auto;display:none">
-      <div class="card-title" id="title-derivadores">🔀 Derivadores → Servicios CEMTRA</div>
+      <div class="card-title" id="title-derivadores">🔀 Derivadores a Kine</div>
       <p style="font-size:0.78rem;color:#718096;margin-bottom:12px" id="desc-derivadores">
         De los pacientes que cada médico atendió en el período, cuántos llegaron a kine en los 90 días siguientes.
       </p>
@@ -387,17 +373,15 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 <footer>Dashboard CEMTRA · Datos en tiempo real desde Google Sheets</footer>
 
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU63c1-QwLVbDscd1EjrhZadJ2-ZWt56oUwaO_DHTWn_1Vw7FPKgQ3e0CNOXMv1Q/pub?output=csv&t=' + Date.now();
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTFl-KydR95XEoEc3sSPLh9N9Jnz1SMMp43n75ad0lvQvixYX6zDNHeDEsm5ePHlH_lVYos2x20Byvr/pub?output=csv&t=' + Date.now();
 
 let rawData = [];
 let charts  = {};
 let activeTab = 'todos';
 let activeMedicoSala = null;
 let activeKineSala   = null;
-let activeRayosEsp   = null;
 let MEDICOS_LIST = [];
 let KINE_LIST    = [];
-let RAYOS_LIST   = [];
 let patientHistory = {}; // PACIENTE_ID → [{fechaMs, sala, especialista}] ordenado por fecha
 
 // Derivadores: visible en todas las pestañas de sala (excl. Todos y Médicos)
@@ -483,12 +467,6 @@ function isEco(r) {
 function isTO(r) {
   return (r['SALA']||'').toUpperCase().includes('TERAPIA OCUPACIONAL') ||
          (r['ESPECIALISTA']||'').toUpperCase().includes('JACQUELINE SALAS');
-}
-function isDestinoCEMTRA(r) {
-  return isSalaKine(r) || sala(r,'ORTESIS') ||
-         (r['SALA']||'').toUpperCase() === 'SALA DE PROCEDIMIENTOS' ||
-         sala(r,'IMAGENOLOGIA') || sala(r,'YESO') || isEco(r) ||
-         isTO(r) || sala(r,'NUTRICIONISTA') || sala(r,'RAYOS') || sala(r,'NUTRIOL');
 }
 function isMedico(r) {
   const s = (r['SALA']||'').toUpperCase();
@@ -577,15 +555,12 @@ function getDerivacionesReales(destFilter, n = Infinity) {
   const pago = document.getElementById('f-pago').value;
 
   // Paso 1: consultas médicas en el período — Map<doctor, Map<patientId, fechaMs>>
-  // Excluye consultas de examen/administrativo por ESPECIALIDAD (para todos los médicos)
-  // Para Apablaza: solo cuenta atenciones de traumatología
+  // Excluye Examen y Administrativo tanto por ESPECIALIDAD como por SALA
   const EXCLUIR = ['examen', 'administrativo', 'administración', 'administracion'];
   const esConsulta = r => {
     const esp  = (r['ESPECIALIDAD'] || '').toLowerCase().trim();
     const sala = (r['SALA'] || '').toLowerCase().trim();
-    if (EXCLUIR.some(ex => esp.includes(ex))) return false;
-    if (sala.includes('apablaza') && !sala.includes('traumatol')) return false;
-    return true;
+    return !EXCLUIR.some(ex => esp.includes(ex) || sala.includes(ex));
   };
 
   const consultas = {};
@@ -646,20 +621,15 @@ Papa.parse(CSV_URL, {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
     }).filter(r => r['#'] && r['#']!=='#');
 
-    console.log('Registros cargados: ' + rawData.length);
-
     buildPatientHistory();
     populateFilters();
     buildMedicosSubtabs();
     buildKineSubtabs();
-    buildRayosSubtabs();
     render();
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='block';
     document.getElementById('last-update').textContent =
-      'Última actualización: '+new Date().toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}) +
-      ' | registros: ' + _antes + '→' + rawData.length +
-      ' | col0=' + (headers[0]||'?') + ' col1=' + (headers[1]||'?');
+      'Última actualización: '+new Date().toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'});
   },
   error: ()=>{
     document.getElementById('loading').innerHTML='<p style="color:#e53e3e;padding:40px">Error al cargar datos.</p>';
@@ -674,31 +644,25 @@ function setTab(tab, btn) {
   const kineSubtabs    = document.getElementById('kine-subtabs');
   const kineDropbar    = document.getElementById('kine-dropdown-bar');
   const medicosDropbar = document.getElementById('medicos-dropdown-bar');
-  const rayosDropbar   = document.getElementById('rayos-dropdown-bar');
 
   kineSubtabs.style.display    = 'none';
   kineDropbar.style.display    = 'none';
   medicosDropbar.style.display = 'none';
-  rayosDropbar.style.display   = 'none';
   activeMedicoSala = null;
   activeKineSala   = null;
-  activeRayosEsp   = null;
 
   if (tab === 'kine') {
     kineSubtabs.style.display = 'block';
     activeTab = 'kine_todos';
     document.querySelectorAll('#kine-subtabs .subtab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('#kine-subtabs .subtab-btn').classList.add('active');
+    // mostrar dropdown de kinesiólogos por defecto
     kineDropbar.style.display = 'flex';
     document.getElementById('kine-select').value = '';
   } else if (tab === 'medicos') {
     medicosDropbar.style.display = 'flex';
     activeTab = 'medicos';
     document.getElementById('medico-select').value = '';
-  } else if (tab === 'rayos') {
-    rayosDropbar.style.display = 'flex';
-    activeTab = 'rayos';
-    document.getElementById('rayos-select').value = '';
   } else {
     activeTab = tab;
   }
@@ -764,30 +728,6 @@ function buildMedicosSubtabs() {
     html += `<option value="${sala}">${label}</option>`;
   });
   sel.innerHTML = html;
-}
-
-function buildRayosSubtabs() {
-  // Reutiliza la lista de médicos ya construida
-  const sel = document.getElementById('rayos-select');
-  let html = `<option value="">👨‍⚕️ Todos los médicos</option>`;
-  MEDICOS_LIST.forEach(salaVal => {
-    const nombre = salaVal.split(' - ')[0]
-      .replace(/^DR\./i,'Dr.').replace(/^DRA\./i,'Dra.');
-    const esp = salaVal.includes(' - ') ? salaVal.split(' - ').slice(1).join(' - ') : '';
-    const label = esp ? `${nombre} — ${esp}` : nombre;
-    html += `<option value="${salaVal}">${label}</option>`;
-  });
-  sel.innerHTML = html;
-}
-
-// Extrae el apellido+nombre del valor de SALA de un médico para cruzar con DERIVADOR
-function nombreDesdeSala(salaVal) {
-  return salaVal.replace(/^DR[A]?\.\s*/i,'').split(' - ')[0].trim().toUpperCase();
-}
-
-function onRayosSelect(sel) {
-  activeRayosEsp = sel.value || null;
-  render();
 }
 
 // ─── Filtros ──────────────────────────────────────────────────────────────────
@@ -877,13 +817,10 @@ function getFiltered() {
     if (!tabFn(r)) return false;
     if (activeMedicoSala && (r['SALA']||'').trim() !== activeMedicoSala) return false;
     if (activeKineSala   && (r['SALA']||'').trim() !== activeKineSala)   return false;
-    if (activeRayosEsp   && (r['DERIVADOR']||'').trim().toUpperCase() !== nombreDesdeSala(activeRayosEsp)) return false;
     if (anio && getAnio(r['FECHA'])!==anio) return false;
     if (mesV!=='' && getMesNum(r['FECHA'])!==parseInt(mesV)) return false;
     if (diaV!=='' && getDia(r['FECHA'])!==parseInt(diaV)) return false;
     if (pago && r['TIPO PAGO']!==pago) return false;
-    // Excluir solo "Revisión de Exámenes" sin costo (no excluir prepagados de Kine u otros)
-    if (parseTotal(r['TOTAL']) === 0 && (r['EXAMEN']||'').toLowerCase().includes('revision')) return false;
     return true;
   });
 }
@@ -896,7 +833,6 @@ function getFilteredComparativo() {
     if (!tabFn(r)) return false;
     if (activeMedicoSala && (r['SALA']||'').trim() !== activeMedicoSala) return false;
     if (activeKineSala   && (r['SALA']||'').trim() !== activeKineSala)   return false;
-    if (activeRayosEsp   && (r['DERIVADOR']||'').trim().toUpperCase() !== nombreDesdeSala(activeRayosEsp)) return false;
     if (pago && r['TIPO PAGO']!==pago) return false;
     return true;
   });
@@ -977,17 +913,9 @@ function render() {
   // ── Tabla Especialidad ─────────────────────────────────────────────────────
   const espTitle   = activeMedicoSala ? '🩺 Prestaciones del médico'
                    : activeKineSala   ? '🦵 Prestaciones del kinesiólogo'
-                   : activeRayosEsp   ? `☢️ Exámenes derivados por ${activeRayosEsp.split(' - ')[0].replace(/^DR[A]?\.\s*/i,'')}`
                    : tab.espTitle;
-  const espKey     = (activeMedicoSala || activeKineSala || activeRayosEsp) ? 'EXAMEN' : tab.espKey;
-  const espNombre  = (activeMedicoSala || activeKineSala || activeRayosEsp) ? 'Examen / Prestación' : (tab.tablaNombre || 'Categoría');
-  // Ancho completo cuando se ve un especialista específico
-  const gridEspHorario = document.getElementById('grid-esp-horario');
-  if (activeMedicoSala || activeKineSala || activeRayosEsp) {
-    gridEspHorario.style.gridTemplateColumns = '1fr';
-  } else {
-    gridEspHorario.style.gridTemplateColumns = '';
-  }
+  const espKey     = (activeMedicoSala || activeKineSala) ? 'EXAMEN' : tab.espKey;
+  const espNombre  = (activeMedicoSala || activeKineSala) ? 'Examen / Prestación' : (tab.tablaNombre || 'Categoría');
   document.getElementById('title-esp').textContent    = espTitle;
   document.getElementById('th-esp-nombre').textContent= espNombre;
   // sobreescribir temporalmente para usar en el bloque
@@ -999,7 +927,7 @@ function render() {
   document.getElementById('esp-body').innerHTML = espSorted.map(([nombre, aten])=>{
     const prod = espProd[nombre]||0;
     const pct  = Math.round(aten/maxAten*100);
-    const label= (activeMedicoSala || activeKineSala || activeRayosEsp) ? nombre : (nombre.length>32 ? nombre.slice(0,30)+'…' : nombre);
+    const label= nombre.length>32 ? nombre.slice(0,30)+'…' : nombre;
     return `<tr>
       <td>${label}</td>
       <td style="text-align:right">${fmtN(aten)}</td>
@@ -1016,7 +944,7 @@ function render() {
     const h=getHora(r['HORA']); if(h===null) return;
     horaCount[h]=(horaCount[h]||0)+1;
   });
-  const horasOrden = Array.from({length:14},(_,i)=>i+8); // 08:00 a 21:00
+  const horasOrden = Array.from({length:24},(_,i)=>i);
   const horaLabels = horasOrden.map(h=>`${String(h).padStart(2,'0')}:00`);
   const horaVals   = horasOrden.map(h=>horaCount[h]||0);
   const maxHora    = Math.max(...horaVals);
@@ -1046,43 +974,6 @@ function render() {
       scales:{
         x:{ticks:{font:{size:9}, maxRotation:45}},
         y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}}
-      }
-    }
-  });
-
-  // ── Gráfico Días de la Semana ──────────────────────────────────────────────
-  const DIAS_NOMBRES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-  const DIAS_ORDER   = [1,2,3,4,5,6,0]; // lunes=1 ... domingo=0
-  const diaCount = {};
-  data.forEach(r=>{
-    const f=parseFecha(r['FECHA']); if(!f) return;
-    const d=f.getDay(); diaCount[d]=(diaCount[d]||0)+1;
-  });
-  const diaVals   = DIAS_ORDER.map(d=>diaCount[d]||0);
-  const maxDia    = Math.max(...diaVals,1);
-  const DIAS_COLORS = ['#3182ce','#3182ce','#3182ce','#3182ce','#3182ce','#805ad5','#e53e3e'];
-
-  destroyChart('chart-dias');
-  const ctxD = document.getElementById('chart-dias').getContext('2d');
-  charts['chart-dias'] = new Chart(ctxD, {
-    type:'bar',
-    data:{
-      labels: DIAS_NOMBRES,
-      datasets:[{
-        data: diaVals,
-        backgroundColor: DIAS_COLORS,
-        borderRadius:4, borderWidth:0
-      }]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{callbacks:{label:c=>' '+fmtN(c.parsed.y)+' atenciones'}}
-      },
-      scales:{
-        x:{ticks:{font:{size:11}}},
-        y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}, beginAtZero:true}
       }
     }
   });
@@ -1126,7 +1017,12 @@ function render() {
             <td><strong>${i+1}</strong></td>
             <td>${d.nombre}</td>
             <td style="text-align:center">${fmtN(d.consultas)}</td>
-            <td><span class="badge-deriv">${fmtN(d.aKine)}</span></td>
+            <td>
+              <span class="badge-deriv">${fmtN(d.aKine)}</span>
+              <div class="mini-bar-bg" style="margin-top:4px;max-width:100px">
+                <div class="mini-bar" style="width:${barPct}%;background:#38a169"></div>
+              </div>
+            </td>
             <td style="text-align:center;font-weight:600;color:${pctColor}">${d.pct}%</td>
           </tr>`;
         }).join('');
