@@ -330,6 +330,12 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
       </div>
     </div>
 
+    <!-- Gráfico Demanda por Día de Semana -->
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">📅 Demanda por Día de la Semana</div>
+      <div class="chart-wrap"><canvas id="chart-diasemana"></canvas></div>
+    </div>
+
     <!-- Tabla Top 10 -->
     <div class="card" style="overflow-x:auto">
       <div class="card-title" id="title-tabla">👨‍⚕️ Top 10 por Producción</div>
@@ -944,7 +950,7 @@ function render() {
     const h=getHora(r['HORA']); if(h===null) return;
     horaCount[h]=(horaCount[h]||0)+1;
   });
-  const horasOrden = Array.from({length:24},(_,i)=>i);
+  const horasOrden = Array.from({length:15},(_,i)=>i+7); // 07:00 → 21:00
   const horaLabels = horasOrden.map(h=>`${String(h).padStart(2,'0')}:00`);
   const horaVals   = horasOrden.map(h=>horaCount[h]||0);
   const maxHora    = Math.max(...horaVals);
@@ -973,6 +979,46 @@ function render() {
       },
       scales:{
         x:{ticks:{font:{size:9}, maxRotation:45}},
+        y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}}
+      }
+    }
+  });
+
+  // ── Demanda por Día de la Semana ──────────────────────────────────────────
+  const DIAS_LABELS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const diaCount = [0,0,0,0,0,0,0];
+  data.forEach(r=>{
+    const f = parseFecha(r['FECHA']);
+    if (!f) return;
+    const dow = f.getDay(); // 0=Dom,1=Lun,...,6=Sáb
+    const idx = dow===0 ? 6 : dow-1; // reordenar: Lun=0 … Dom=6
+    diaCount[idx]++;
+  });
+  const maxDia = Math.max(...diaCount);
+  destroyChart('chart-diasemana');
+  charts['chart-diasemana'] = new Chart(
+    document.getElementById('chart-diasemana').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: DIAS_LABELS,
+      datasets: [{
+        data: diaCount,
+        backgroundColor: diaCount.map(v=>{
+          const ratio = maxDia ? v/maxDia : 0;
+          const r2=Math.round(43+(ratio*89)); const g2=Math.round(108+(ratio*-70)); const b2=Math.round(176+(ratio*-130));
+          return `rgb(${r2},${g2},${b2})`;
+        }),
+        borderRadius: 5, borderWidth: 0
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:c=>' '+fmtN(c.parsed.y)+' atenciones'}}
+      },
+      scales:{
+        x:{ticks:{font:{size:10}}},
         y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}}
       }
     }
@@ -1017,11 +1063,8 @@ function render() {
             <td><strong>${i+1}</strong></td>
             <td>${d.nombre}</td>
             <td style="text-align:center">${fmtN(d.consultas)}</td>
-            <td>
+            <td style="text-align:center">
               <span class="badge-deriv">${fmtN(d.aKine)}</span>
-              <div class="mini-bar-bg" style="margin-top:4px;max-width:100px">
-                <div class="mini-bar" style="width:${barPct}%;background:#38a169"></div>
-              </div>
             </td>
             <td style="text-align:center;font-weight:600;color:${pctColor}">${d.pct}%</td>
           </tr>`;
