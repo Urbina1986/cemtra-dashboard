@@ -387,7 +387,7 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
 <footer>Dashboard CEMTRA · Datos en tiempo real desde Google Sheets</footer>
 
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTFl-KydR95XEoEc3sSPLh9N9Jnz1SMMp43n75ad0lvQvixYX6zDNHeDEsm5ePHlH_lVYos2x20Byvr/pub?output=csv&t=' + Date.now();
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSU63c1-QwLVbDscd1EjrhZadJ2-ZWt56oUwaO_DHTWn_1Vw7FPKgQ3e0CNOXMv1Q/pub?output=csv&t=' + Date.now();
 
 let rawData = [];
 let charts  = {};
@@ -646,6 +646,23 @@ Papa.parse(CSV_URL, {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
     }).filter(r => r['#'] && r['#']!=='#');
 
+    // Dedup: elimina registros importados dos veces.
+    // Si existe ID AGENDA usa esa clave. Si no (datos del consolidado v2, 20 col), incluye
+    // PACIENTE_ID para no colapsar pacientes distintos con mismo examen/hora/costo.
+    const _antes = rawData.length;
+    const _seen = new Set();
+    rawData = rawData.filter(r => {
+      const pid = r['PACIENTE_ID'] || r['RUT'] || '';
+      const agenda = r['ID AGENDA'] || '';
+      const key = agenda
+        ? [agenda, r['EXAMEN'], r['TOTAL'], r['FECHA'], r['HORA']].join('|')
+        : [pid, r['EXAMEN'], r['TOTAL'], r['FECHA'], r['HORA']].join('|');
+      if (_seen.has(key)) return false;
+      _seen.add(key);
+      return true;
+    });
+    console.log('Dedup: ' + _antes + ' → ' + rawData.length + ' registros');
+
     buildPatientHistory();
     populateFilters();
     buildMedicosSubtabs();
@@ -655,7 +672,9 @@ Papa.parse(CSV_URL, {
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='block';
     document.getElementById('last-update').textContent =
-      'Última actualización: '+new Date().toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'});
+      'Última actualización: '+new Date().toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}) +
+      ' | registros: ' + _antes + '→' + rawData.length +
+      ' | col0=' + (headers[0]||'?') + ' col1=' + (headers[1]||'?');
   },
   error: ()=>{
     document.getElementById('loading').innerHTML='<p style="color:#e53e3e;padding:40px">Error al cargar datos.</p>';
