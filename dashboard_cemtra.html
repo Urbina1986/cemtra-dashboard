@@ -646,22 +646,7 @@ Papa.parse(CSV_URL, {
       const obj={}; headers.forEach((h,i)=>{ obj[h]=row[i]||''; }); return obj;
     }).filter(r => r['#'] && r['#']!=='#');
 
-    // Dedup: elimina registros importados dos veces.
-    // Si existe ID AGENDA usa esa clave. Si no (datos del consolidado v2, 20 col), incluye
-    // PACIENTE_ID para no colapsar pacientes distintos con mismo examen/hora/costo.
-    const _antes = rawData.length;
-    const _seen = new Set();
-    rawData = rawData.filter(r => {
-      const pid = r['PACIENTE_ID'] || r['RUT'] || '';
-      const agenda = r['ID AGENDA'] || '';
-      const key = agenda
-        ? [agenda, r['EXAMEN'], r['TOTAL'], r['FECHA'], r['HORA']].join('|')
-        : [pid, r['EXAMEN'], r['TOTAL'], r['FECHA'], r['HORA']].join('|');
-      if (_seen.has(key)) return false;
-      _seen.add(key);
-      return true;
-    });
-    console.log('Dedup: ' + _antes + ' → ' + rawData.length + ' registros');
+    console.log('Registros cargados: ' + rawData.length);
 
     buildPatientHistory();
     populateFilters();
