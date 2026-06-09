@@ -558,6 +558,7 @@ function buildPatientHistory() {
 function getDerivacionesReales(destFilter, n = Infinity) {
   const anio = document.getElementById('f-anio').value;
   const mesV = document.getElementById('f-mes').value;
+  const diaV = document.getElementById('f-dia').value;
   const pago = document.getElementById('f-pago').value;
 
   const EXCLUIR_DERIV = new Set(['-','DESCONOCIDA REFERENCIA','ILEGIBLE REFERENCIA','','NULL','NONE']);
@@ -589,6 +590,7 @@ function getDerivacionesReales(destFilter, n = Infinity) {
     if (EXCLUIR_ESP.some(ex => esp.includes(ex) || salaL.includes(ex))) return;
     if (anio && getAnio(r['FECHA']) !== anio) return;
     if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
+    if (diaV !== '' && getDia(r['FECHA']) !== parseInt(diaV)) return;
     if (pago && r['TIPO PAGO'] !== pago) return;
     const pid = (r['RUT'] || r['PACIENTE_ID'] || '').trim();
     if (!pid) return;
@@ -624,6 +626,7 @@ function getDerivacionesReales(destFilter, n = Infinity) {
     if (!destFilter(r)) return;
     if (anio && getAnio(r['FECHA']) !== anio) return;
     if (mesV !== '' && getMesNum(r['FECHA']) !== parseInt(mesV)) return;
+    if (diaV !== '' && getDia(r['FECHA']) !== parseInt(diaV)) return;
     if (pago && r['TIPO PAGO'] !== pago) return;
 
     const pid = (r['RUT'] || r['PACIENTE_ID'] || '').trim();
