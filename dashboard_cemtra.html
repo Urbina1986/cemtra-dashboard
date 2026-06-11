@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1077,7 +1076,23 @@ function render() {
         x:{ticks:{font:{size:10}}},
         y:{ticks:{font:{size:10}, callback:v=>fmtN(v)}}
       }
-    }
+    },
+    plugins:[{
+      id:'diaLabels',
+      afterDatasetsDraw(chart){
+        const ctx=chart.ctx;
+        chart.data.datasets.forEach((ds,i)=>{
+          chart.getDatasetMeta(i).data.forEach((bar,j)=>{
+            const v=ds.data[j]; if(!v) return;
+            ctx.save();
+            ctx.fillStyle='#2d3748'; ctx.font='600 11px system-ui,sans-serif';
+            ctx.textAlign='center'; ctx.textBaseline='bottom';
+            ctx.fillText(fmtN(v), bar.x, bar.y-4);
+            ctx.restore();
+          });
+        });
+      }
+    }]
   });
 
   // ── Tabla Top 10 ───────────────────────────────────────────────────────────
