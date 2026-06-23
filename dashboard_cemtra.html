@@ -118,6 +118,19 @@ header p  { font-size: 0.78rem; opacity: 0.65; margin-top: 2px; color: white; }
 .kpi-value { font-size: 1.7rem; font-weight: 700; color: #1a365d; }
 .kpi-sub   { font-size: 0.76rem; color: #a0aec0; margin-top: 3px; }
 
+/* Pulso del mes */
+.pulso-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.pulso-box  { background: #f7fafc; border-radius: 10px; padding: 14px 16px; border-left: 4px solid #cbd5e0; }
+.pulso-box.pos { border-left-color: #38a169; }
+.pulso-box.neg { border-left-color: #e53e3e; }
+.pulso-tit  { font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase; margin-bottom: 8px; }
+.pulso-val  { font-size: 1.5rem; font-weight: 700; color: #1a365d; line-height: 1.1; }
+.pulso-prev { font-size: 0.78rem; color: #a0aec0; margin-top: 4px; }
+.pulso-delta{ display: inline-flex; align-items: center; gap: 4px; font-size: 0.86rem; font-weight: 700; margin-top: 8px; padding: 2px 8px; border-radius: 6px; }
+.pulso-delta.pos { color: #276749; background: rgba(56,161,105,.12); }
+.pulso-delta.neg { color: #c53030; background: rgba(229,62,62,.10); }
+.pulso-delta.eq  { color: #718096; background: rgba(160,174,192,.15); }
+
 /* Cards genéricas */
 .card {
   background: white; border-radius: 12px; padding: 18px;
@@ -292,6 +305,12 @@ footer { text-align: center; padding: 14px; font-size: 0.74rem; color: #a0aec0; 
         <div class="kpi-value" id="kpi-pacientes">—</div>
         <div class="kpi-sub">por ID de paciente</div>
       </div>
+    </div>
+
+    <!-- Pulso del mes: comparativa con mes anterior al mismo corte -->
+    <div class="grid-full card" id="card-pulso" style="margin-top:20px">
+      <div class="card-title">📊 Pulso del mes — comparación con el mes anterior <span id="pulso-corte" style="font-weight:400;color:#718096;font-size:.8rem"></span></div>
+      <div class="pulso-grid" id="pulso-body"></div>
     </div>
 
     <!-- Tabla comparativa producción mensual -->
@@ -899,6 +918,118 @@ function getFilteredComparativo() {
   });
 }
 
+// ─── Pulso del mes ──────────────────────────────────────────────────────────
+function renderPulso() {
+  const body  = document.getElementById('pulso-body');
+  const corteEl = document.getElementById('pulso-corte');
+  if (!body) return;
+
+  // Datos del tab + pago (sin filtro año/mes/día): el pulso siempre mira el mes en curso
+  const base = getFilteredComparativo();
+  if (!base.length) { body.innerHTML = '<p style="color:#a0aec0;padding:8px">Sin datos</p>'; corteEl.textContent=''; return; }
+
+  // Fecha de corte: respeta filtros año/mes/día si están puestos; si no, último día con datos
+  const fAnio = document.getElementById('f-anio').value;
+  const fMes  = document.getElementById('f-mes').value;
+  const fDia  = document.getElementById('f-dia').value;
+  let corte = null;
+
+  if (fMes !== '') {
+    const mSel = parseInt(fMes);
+    const ySel = fAnio ? parseInt(fAnio) : null;
+    // Último día con datos dentro del mes/año seleccionado (o el día filtrado)
+    let maxD = 0, yRef = null;
+    base.forEach(r => {
+      const f = parseFecha(r['FECHA']); if (!f) return;
+      if (f.getMonth() !== mSel) return;
+      if (ySel && f.getFullYear() !== ySel) return;
+      if (fDia !== '' && f.getDate() !== parseInt(fDia)) return;
+      if (!yRef || f.getFullYear() > yRef) yRef = f.getFullYear();
+      if (f.getDate() > maxD) maxD = f.getDate();
+    });
+    if (yRef) corte = new Date(yRef, mSel, fDia !== '' ? parseInt(fDia) : maxD);
+  }
+
+  if (!corte) {
+    // Último día con datos en el conjunto
+    let maxMs = 0;
+    base.forEach(r => {
+      const f = parseFecha(r['FECHA']);
+      if (f && f.getTime() > maxMs) { maxMs = f.getTime(); corte = f; }
+    });
+  }
+  if (!corte) { body.innerHTML=''; corteEl.textContent=''; return; }
+
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const cAnio = corte.getFullYear(), cMes = corte.getMonth(), cDia = corte.getDate();
+  // Mes anterior (con rollover de enero)
+  const pMes  = cMes === 0 ? 11 : cMes - 1;
+  const pAnio = cMes === 0 ? cAnio - 1 : cAnio;
+  const diasEnMes = (y,m) => new Date(y, m+1, 0).getDate();
+
+  // Suma de producción en un rango de días [d1,d2] de un mes/año
+  function sumaRango(y, m, d1, d2) {
+    let s = 0;
+    base.forEach(r => {
+      const f = parseFecha(r['FECHA']); if (!f) return;
+      if (f.getFullYear()!==y || f.getMonth()!==m) return;
+      const d = f.getDate();
+      if (d>=d1 && d<=d2) s += parseTotal(r['TOTAL']);
+    });
+    return s;
+  }
+
+  corteEl.textContent = '· corte al ' + cDia + ' de ' + MESES[cMes] + ' ' + cAnio;
+
+  // 1) Día puntual: corte vs mismo número de día del mes anterior (clamp si no existe, ej. 31 feb)
+  const pDiaComp = Math.min(cDia, diasEnMes(pAnio, pMes));
+  const diaCur   = sumaRango(cAnio, cMes, cDia, cDia);
+  const diaPrev  = sumaRango(pAnio, pMes, pDiaComp, pDiaComp);
+
+  // 2) Mes a la fecha: día 1 → corte, vs mismo tramo mes anterior
+  const mtdCur  = sumaRango(cAnio, cMes, 1, cDia);
+  const mtdPrev = sumaRango(pAnio, pMes, 1, cDia);
+
+  // 3) Proyección cierre del mes vs total mes anterior completo
+  const proy    = cDia > 0 ? mtdCur / cDia * diasEnMes(cAnio, cMes) : 0;
+  const prevTot = sumaRango(pAnio, pMes, 1, diasEnMes(pAnio, pMes));
+
+  function deltaHtml(cur, prev) {
+    if (!prev) return '<span class="pulso-delta eq">— sin base previa</span>';
+    const pct = (cur - prev) / prev * 100;
+    const cls = pct > 0.5 ? 'pos' : pct < -0.5 ? 'neg' : 'eq';
+    const arrow = pct > 0.5 ? '▲' : pct < -0.5 ? '▼' : '▬';
+    return '<span class="pulso-delta '+cls+'">'+arrow+' '+(pct>=0?'+':'')+pct.toFixed(1)+'%</span>';
+  }
+  function boxCls(cur, prev) {
+    if (!prev) return '';
+    return cur >= prev ? 'pos' : 'neg';
+  }
+
+  const nDiaPrev = MESES[pMes];
+  body.innerHTML =
+    '<div class="pulso-box '+boxCls(diaCur,diaPrev)+'">'
+    + '<div class="pulso-tit">Día '+cDia+' '+MESES[cMes]+' vs '+pDiaComp+' '+nDiaPrev+'</div>'
+    + '<div class="pulso-val">'+fmt(diaCur)+'</div>'
+    + '<div class="pulso-prev">'+pDiaComp+' '+nDiaPrev+': '+fmt(diaPrev)+'</div>'
+    + deltaHtml(diaCur, diaPrev)
+    + '</div>'
+
+    + '<div class="pulso-box '+boxCls(mtdCur,mtdPrev)+'">'
+    + '<div class="pulso-tit">Acumulado '+MESES[cMes]+' (1–'+cDia+')</div>'
+    + '<div class="pulso-val">'+fmt(mtdCur)+'</div>'
+    + '<div class="pulso-prev">'+nDiaPrev+' (1–'+cDia+'): '+fmt(mtdPrev)+'</div>'
+    + deltaHtml(mtdCur, mtdPrev)
+    + '</div>'
+
+    + '<div class="pulso-box '+boxCls(proy,prevTot)+'">'
+    + '<div class="pulso-tit">Proyección cierre '+MESES[cMes]+'</div>'
+    + '<div class="pulso-val">'+fmt(proy)+'</div>'
+    + '<div class="pulso-prev">'+nDiaPrev+' total: '+fmt(prevTot)+'</div>'
+    + deltaHtml(proy, prevTot)
+    + '</div>';
+}
+
 // ─── Charts ───────────────────────────────────────────────────────────────────
 function destroyChart(id) {
   if (charts[id]) { charts[id].destroy(); delete charts[id]; }
@@ -918,6 +1049,9 @@ function render() {
   document.getElementById('kpi-produccion').textContent = fmt(produccion);
   document.getElementById('kpi-ticket').textContent     = fmt(total?produccion/total:0);
   document.getElementById('kpi-pacientes').textContent  = fmtN(pacientes);
+
+  // Pulso del mes (comparativa con mes anterior al mismo corte)
+  renderPulso();
 
   // ── Tabla Comparativa ──────────────────────────────────────────────────────
   const años = [...new Set(dataComp.map(r=>getAnio(r['FECHA'])).filter(Boolean))].sort();
